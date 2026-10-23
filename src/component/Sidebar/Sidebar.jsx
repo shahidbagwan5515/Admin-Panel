@@ -28,7 +28,7 @@ const menuItems = [
   { title: "Users", icon: <PeopleAltOutlinedIcon /> },
   { title: "Products", icon: <Inventory2OutlinedIcon /> },
   { title: "Orders", icon: <ShoppingCartOutlinedIcon /> },
-  { title: "Analytics", icon: <BarChartOutlinedIcon /> },
+  { title: "Stock", icon: <BarChartOutlinedIcon /> },
 ];
 
 function Sidebar({ open, onNavigate, onLogout }) {
