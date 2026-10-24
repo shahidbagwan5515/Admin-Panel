@@ -15,7 +15,7 @@ import {
 import MenuIcon from "@mui/icons-material/Menu";
 import CloseIcon from "@mui/icons-material/Close";
 
-function Header() {
+function Header({ onLogout }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     return typeof window !== "undefined" ? window.innerWidth > 600 : true;
   });
@@ -71,7 +71,14 @@ function Header() {
         <Box className="sidebar-overlay" onClick={closeMobileSidebar} />
       )}
 
-      <Sidebar open={sidebarOpen} onNavigate={closeMobileSidebar} />
+      {/* <Sidebar open={sidebarOpen} onNavigate={closeMobileSidebar} /> */}
+      <Sidebar
+        open={sidebarOpen}
+        onNavigate={closeMobileSidebar}
+        onLogout={() => {
+          onLogout();
+        }}
+      />
 
       <Box
         className={`admin-main ${

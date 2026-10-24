@@ -1,0 +1,276 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.login-page {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(circle at top left, #e0e7ff 0%, transparent 40%),
+    linear-gradient(135deg, #f5f7ff 0%, #f8fafc 55%, #ede9fe 100%);
+  font-family: "Roboto", sans-serif;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  min-width: 0;
+  padding: 40px;
+  background: #ffffff;
+  border: 1px solid #e8eaf0;
+  border-radius: 22px;
+  box-shadow: 0 20px 60px rgba(30, 41, 59, 0.10);
+}
+
+.login-brand-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  border-radius: 18px;
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.22);
+}
+
+.login-brand-icon svg {
+  font-size: 32px;
+}
+
+.login-title {
+  text-align: center;
+  font-size: 28px !important;
+  line-height: 1.3 !important;
+  font-weight: 700 !important;
+  color: #172033;
+}
+
+.login-subtitle {
+  margin: 10px 0 30px !important;
+  text-align: center;
+  color: #7b8497;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.login-label {
+  margin-bottom: 8px !important;
+  color: #344054;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+.login-input {
+  width: 100%;
+  margin-bottom: 20px !important;
+}
+
+.login-input .MuiOutlinedInput-root {
+  min-height: 54px;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.login-input .MuiOutlinedInput-notchedOutline {
+  border-color: #dfe3eb;
+}
+
+.login-input .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+  border-color: #818cf8;
+}
+
+.login-input .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: #4f46e5;
+  border-width: 1.5px;
+}
+
+.login-input .MuiInputAdornment-root {
+  flex-shrink: 0;
+}
+
+.login-input .MuiInputAdornment-root svg {
+  color: #8b95a7;
+  font-size: 21px;
+}
+
+.login-input input {
+  min-width: 0;
+  padding-top: 15px;
+  padding-bottom: 15px;
+  font-size: 14px;
+}
+
+.login-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -2px;
+  margin-bottom: 22px;
+}
+
+.login-options .MuiFormControlLabel-root {
+  margin-left: -8px;
+  margin-right: 0;
+}
+
+.login-options .MuiFormControlLabel-label {
+  font-size: 12px;
+  color: #667085;
+}
+
+.login-options .MuiCheckbox-root {
+  color: #9ca3af;
+  padding: 8px;
+}
+
+.forgot-password {
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.forgot-password:hover {
+  text-decoration: underline;
+}
+
+.login-submit.MuiButton-root {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 11px;
+  background: #4f46e5;
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: none;
+  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.20);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-submit.MuiButton-root:hover {
+  background: #4338ca;
+  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.25);
+}
+
+.login-footer {
+  margin-top: 26px !important;
+  text-align: center;
+  color: #98a2b3;
+  font-size: 11px !important;
+  line-height: 1.6 !important;
+}
+
+/* Tablet */
+@media (max-width: 768px) {
+  .login-page {
+    padding: 28px 20px;
+  }
+
+  .login-card {
+    max-width: 420px;
+    padding: 34px 30px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .login-page {
+    padding: 20px 16px;
+    align-items: center;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 380px;
+    padding: 30px 22px 24px;
+    border-radius: 18px;
+    box-shadow: 0 12px 35px rgba(30, 41, 59, 0.09);
+  }
+
+  .login-brand-icon {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 18px;
+    border-radius: 16px;
+  }
+
+  .login-brand-icon svg {
+    font-size: 29px;
+  }
+
+  .login-title {
+    font-size: 25px !important;
+  }
+
+  .login-subtitle {
+    margin: 8px 0 26px !important;
+    font-size: 13px !important;
+  }
+
+  .login-input {
+    margin-bottom: 18px !important;
+  }
+
+  .login-input .MuiOutlinedInput-root {
+    min-height: 52px;
+  }
+
+  .login-options {
+    margin-bottom: 20px;
+  }
+
+  .login-submit.MuiButton-root {
+    min-height: 50px;
+  }
+
+  .login-footer {
+    margin-top: 24px !important;
+    font-size: 10px !important;
+  }
+}
+
+/* Small phones */
+@media (max-width: 360px) {
+  .login-page {
+    padding: 14px 10px;
+  }
+
+  .login-card {
+    padding: 26px 16px 22px;
+    border-radius: 16px;
+  }
+
+  .login-title {
+    font-size: 23px !important;
+  }
+
+  .login-options .MuiFormControlLabel-label,
+  .forgot-password {
+    font-size: 11px;
+  }
+}
+
+/* Short screens: allow scrolling instead of clipping */
+@media (max-height: 600px) {
+  .login-page {
+    align-items: flex-start;
+  }
+}

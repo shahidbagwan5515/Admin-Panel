@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import "./Sidebar.css";
 
 import {
@@ -22,28 +22,44 @@ import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import BusinessRoundedIcon from "@mui/icons-material/BusinessRounded";
-
 const menuItems = [
-  { title: "Dashboard", icon: <DashboardOutlinedIcon /> },
-  { title: "Users", icon: <PeopleAltOutlinedIcon /> },
-  { title: "Products", icon: <Inventory2OutlinedIcon /> },
-  { title: "Orders", icon: <ShoppingCartOutlinedIcon /> },
-  { title: "Stock", icon: <BarChartOutlinedIcon /> },
+  {
+    title: "Dashboard",
+    icon: <DashboardOutlinedIcon />,
+    path: "/Header/Dashboard",
+  },
+  {
+    title: "Users",
+    icon: <PeopleAltOutlinedIcon />,
+    path: "/Header/User",
+  },
+  {
+    title: "Products",
+    icon: <Inventory2OutlinedIcon />,
+    path: "/Header/Product",
+  },
+  {
+    title: "Orders",
+    icon: <ShoppingCartOutlinedIcon />,
+    path: "/Header/Order",
+  },
+  {
+    title: "Stock",
+    icon: <BarChartOutlinedIcon />,
+    path: "/Header/Stock",
+  },
 ];
-
 function Sidebar({ open, onNavigate, onLogout }) {
   const [activeItem, setActiveItem] = useState("Dashboard");
   const navigate = useNavigate();
 
-  const handleNavigation = (title) => {
-    setActiveItem(title);
+  const handleNavigation = (item) => {
+    setActiveItem(item.title);
 
-    if (title === "Dashboard") {
-      navigate("/Header/Dashboard");
-    }
+    navigate(item.path);
 
     if (onNavigate) {
-      onNavigate(title);
+      onNavigate(item.title);
     }
   };
 
@@ -63,10 +79,12 @@ function Sidebar({ open, onNavigate, onLogout }) {
       arrow
     >
       <ListItemButton
+        component={Link}
+        to={item.path}
         className={`sidebar-menu-item ${
           activeItem === item.title ? "active" : ""
         }`}
-        onClick={() => handleNavigation(item.title)}
+        onClick={() => handleNavigation(item)}
         selected={activeItem === item.title}
         aria-current={activeItem === item.title ? "page" : undefined}
       >
