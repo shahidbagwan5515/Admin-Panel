@@ -4,6 +4,7 @@ import { useState } from "react";
 import Header from "./component/Header/Header";
 import Dashboard from "./component/Dashboard/Dashboard";
 import Login from "./component/Login/Login";
+import Stock from "./component/Stock Add/Stock";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(
@@ -59,7 +60,7 @@ function App() {
           <Route path="User" element={<h1>Users</h1>} />
           <Route path="Product" element={<h1>Products</h1>} />
           <Route path="Order" element={<h1>Orders</h1>} />
-          <Route path="Stock" element={<h1>Stock</h1>} />
+          <Route path="Stock" element={<Stock />} />
         </Route>
 
         <Route

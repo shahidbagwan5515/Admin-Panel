@@ -29,6 +29,11 @@ const menuItems = [
     path: "/Header/Dashboard",
   },
   {
+    title: "Stock",
+    icon: <BarChartOutlinedIcon />,
+    path: "/Header/Stock",
+  },
+  {
     title: "Users",
     icon: <PeopleAltOutlinedIcon />,
     path: "/Header/User",
@@ -42,11 +47,6 @@ const menuItems = [
     title: "Orders",
     icon: <ShoppingCartOutlinedIcon />,
     path: "/Header/Order",
-  },
-  {
-    title: "Stock",
-    icon: <BarChartOutlinedIcon />,
-    path: "/Header/Stock",
   },
 ];
 function Sidebar({ open, onNavigate, onLogout }) {
