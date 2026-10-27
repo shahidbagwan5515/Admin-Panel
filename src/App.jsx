@@ -6,6 +6,7 @@ import Dashboard from "./component/Dashboard/Dashboard";
 import Login from "./component/Login/Login";
 import Stock from "./component/Stock Add/Stock";
 import User from "./component/User/User";
+import Order from "./component/Order/Order";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(
@@ -60,7 +61,7 @@ function App() {
           <Route path="Dashboard" element={<Dashboard />} />
           <Route path="User" element={<User />} />
           <Route path="Product" element={<h1>Products</h1>} />
-          <Route path="Order" element={<h1>Orders</h1>} />
+          <Route path="Order" element={<Order />} />
           <Route path="Stock" element={<Stock />} />
         </Route>
 

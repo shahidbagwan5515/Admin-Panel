@@ -39,14 +39,14 @@ const menuItems = [
     path: "/Header/User",
   },
   {
-    title: "Products",
-    icon: <Inventory2OutlinedIcon />,
-    path: "/Header/Product",
-  },
-  {
     title: "Orders",
     icon: <ShoppingCartOutlinedIcon />,
     path: "/Header/Order",
+  },
+  {
+    title: "Products",
+    icon: <Inventory2OutlinedIcon />,
+    path: "/Header/Product",
   },
 ];
 function Sidebar({ open, onNavigate, onLogout }) {
