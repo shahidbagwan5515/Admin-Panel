@@ -7,6 +7,7 @@ import Login from "./component/Login/Login";
 import Stock from "./component/Stock Add/Stock";
 import User from "./component/User/User";
 import Order from "./component/Order/Order";
+import Category from "./component/Category/Category";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(
@@ -60,9 +61,10 @@ function App() {
           <Route index element={<Navigate to="Dashboard" replace />} />
           <Route path="Dashboard" element={<Dashboard />} />
           <Route path="User" element={<User />} />
-          <Route path="Product" element={<h1>Products</h1>} />
+          <Route path="Category" element={<Category />} />
           <Route path="Order" element={<Order />} />
           <Route path="Stock" element={<Stock />} />
+          <Route path="Product" element={<h1>Product</h1>} />
         </Route>
 
         <Route

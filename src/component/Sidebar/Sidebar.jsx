@@ -18,6 +18,8 @@ import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
+
+import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
@@ -44,7 +46,12 @@ const menuItems = [
     path: "/Header/Order",
   },
   {
-    title: "Products",
+    title: "Category",
+    icon: <CategoryOutlinedIcon />,
+    path: "/Header/Category",
+  },
+  {
+    title: "Product",
     icon: <Inventory2OutlinedIcon />,
     path: "/Header/Product",
   },
