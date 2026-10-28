@@ -243,12 +243,6 @@ function Category() {
                   <tr key={category.id}>
                     <td>
                       <div className="category-table-name">
-                        <div
-                          className="category-table-icon"
-                          style={{ backgroundColor: category.color }}
-                        >
-                          {category.icon}
-                        </div>
                         <span>{category.name}</span>
                       </div>
                     </td>

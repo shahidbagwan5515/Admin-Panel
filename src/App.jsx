@@ -8,6 +8,7 @@ import Stock from "./component/Stock Add/Stock";
 import User from "./component/User/User";
 import Order from "./component/Order/Order";
 import Category from "./component/Category/Category";
+import Product from "./component/Product/Product";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(
@@ -64,7 +65,7 @@ function App() {
           <Route path="Category" element={<Category />} />
           <Route path="Order" element={<Order />} />
           <Route path="Stock" element={<Stock />} />
-          <Route path="Product" element={<h1>Product</h1>} />
+          <Route path="Product" element={<Product />} />
         </Route>
 
         <Route
