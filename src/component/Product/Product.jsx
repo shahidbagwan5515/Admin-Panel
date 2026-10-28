@@ -23,6 +23,8 @@ import prdimg02 from "../../assets/dealsImg3.jpg";
 import prdimg03 from "../../assets/psorakot.png";
 import prdimg04 from "../../assets/shop.jpeg";
 import prdimg05 from "../../assets/slideImg7.webp";
+const FALLBACK_IMAGE =
+  "https://placehold.co/300x300/f3f4f6/64748b?text=No+Image";
 
 const initialProducts = [
   {
@@ -101,7 +103,7 @@ const emptyForm = {
   stock: "",
   price: "",
   supplier: "",
-  image: "",
+  images: [],
   description: "",
 };
 
@@ -212,7 +214,7 @@ function Product() {
       stock: String(product.stock),
       price: String(product.price),
       supplier: product.supplier || "",
-      image: product.image || "",
+      images: product.images || (product.image ? [product.image] : []),
       description: product.description || "",
     });
     setError("");
@@ -233,37 +235,48 @@ function Product() {
   };
 
   const handleImageChange = (event) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
+    const validImages = [];
+    const maxSize = 5 * 1024 * 1024;
 
-    if (!file) return;
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        setError("Please select valid image files.");
+        continue;
+      }
 
-    if (!file.type.startsWith("image/")) {
-      setError("Please select a valid image file.");
-      event.target.value = "";
-      return;
+      if (file.size > maxSize) {
+        setError(`${file.name} must be less than 5 MB.`);
+        continue;
+      }
+
+      validImages.push(file);
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image size must be less than 5 MB.");
-      event.target.value = "";
-      return;
-    }
+    Promise.all(
+      validImages.map(
+        (file) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
 
-    const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject();
 
-    reader.onload = () => {
-      setForm((previous) => ({
-        ...previous,
-        image: reader.result,
-      }));
-      setError("");
-    };
+            reader.readAsDataURL(file);
+          }),
+      ),
+    )
+      .then((newImages) => {
+        setForm((previous) => ({
+          ...previous,
+          images: [...previous.images, ...newImages],
+        }));
+      })
+      .catch(() => {
+        setError("Unable to read one or more images.");
+      });
 
-    reader.onerror = () => {
-      setError("Unable to read the selected image.");
-    };
-
-    reader.readAsDataURL(file);
+    event.target.value = "";
   };
 
   const saveProduct = (event) => {
@@ -314,7 +327,8 @@ function Product() {
       stock,
       price,
       supplier,
-      image: form.image || "",
+      images: form.images,
+      description: form.description,
     };
 
     if (editingId !== null) {
@@ -350,24 +364,27 @@ function Product() {
     return { label: "In Stock", className: "good" };
   };
 
-  const renderProductImage = (product, large = false) => (
-    <div className={`product-thumbnail ${large ? "large" : ""}`}>
-      <img
-        src={product.image || FALLBACK_IMAGE}
-        alt={product.name}
-        onError={(event) => {
-          event.currentTarget.onerror = null;
-          event.currentTarget.src = FALLBACK_IMAGE;
-        }}
-      />
-    </div>
-  );
+  const renderProductImage = (product, large = false) => {
+    const imageSrc = product.images?.[0] || product.image || FALLBACK_IMAGE;
+
+    return (
+      <div className={`product-thumbnail ${large ? "large" : ""}`}>
+        <img
+          src={imageSrc}
+          alt={product.name}
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = FALLBACK_IMAGE;
+          }}
+        />
+      </div>
+    );
+  };
 
   return (
     <div className="product-page">
       <div className="product-page-header">
         <div>
-          <span className="product-eyebrow">INVENTORY MANAGEMENT</span>
           <h1>Products</h1>
           <p>Manage your Ayurvedic products, pricing and stock levels.</p>
         </div>
@@ -605,13 +622,14 @@ function Product() {
                     </span>
                   </div>
 
-                  <button
-                    className="product-action edit"
-                    onClick={() => openEditForm(product)}
-                    aria-label={`Edit ${product.name}`}
+                  <IconButton
+                    size="small"
+                    className="stock-more-btn"
+                    onClick={(event) => handleMenuOpen(event, product)}
+                    aria-label={`Options for ${product.name}`}
                   >
-                    <EditOutlined />
-                  </button>
+                    <MoreVertIcon />
+                  </IconButton>
                 </div>
 
                 <div className="product-mobile-details">
@@ -637,18 +655,6 @@ function Product() {
                       {product.status}
                     </strong>
                   </div>
-                </div>
-
-                <div className="product-mobile-actions">
-                  <button onClick={() => openEditForm(product)}>
-                    <EditOutlined /> Edit Product
-                  </button>
-                  <button
-                    className="mobile-delete-btn"
-                    onClick={() => deleteProduct(product.id)}
-                  >
-                    <Delete /> Delete
-                  </button>
                 </div>
               </article>
             );
@@ -776,27 +782,37 @@ function Product() {
               </div>
 
               <div className="product-form-field full">
-                <label htmlFor="product-image">Product Image</label>
+                <label htmlFor="product-image">Product Images</label>
+
                 <input
                   id="product-image"
                   type="file"
                   accept="image/*"
+                  multiple
                   onChange={handleImageChange}
                 />
 
-                {form.image && (
-                  <div className="product-image-preview">
-                    <img src={form.image} alt="Product preview" />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm((previous) => ({ ...previous, image: "" }))
-                      }
-                    >
-                      Remove image
-                    </button>
-                  </div>
-                )}
+                <div className="product-image-gallery">
+                  {form.images.map((image, index) => (
+                    <div className="product-image-preview" key={index}>
+                      <img src={image} alt={`Product preview ${index + 1}`} />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((previous) => ({
+                            ...previous,
+                            images: previous.images.filter(
+                              (_, imageIndex) => imageIndex !== index,
+                            ),
+                          }))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="product-form-field full">
