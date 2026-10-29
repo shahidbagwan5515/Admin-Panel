@@ -14,16 +14,18 @@ import {
   Tooltip,
 } from "@mui/material";
 
-import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
-import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
-import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
-import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
-
-import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
-import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import BusinessRoundedIcon from "@mui/icons-material/BusinessRounded";
+
+import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
+import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
+import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
+import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
+import PersonOutlineOutlinedIcon from "@mui/icons-material/PersonOutlineOutlined";
+
 const menuItems = [
   {
     title: "Dashboard",
@@ -54,6 +56,11 @@ const menuItems = [
     title: "Product",
     icon: <Inventory2OutlinedIcon />,
     path: "/Header/Product",
+  },
+  {
+    title: "Customer",
+    icon: <PersonOutlineOutlinedIcon />,
+    path: "/Header/Customer",
   },
 ];
 function Sidebar({ open, onNavigate, onLogout }) {
