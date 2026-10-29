@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import { useState } from "react";
+import { useMemo } from "react";
 import {
   Box,
   Typography,
@@ -20,13 +21,18 @@ import {
   TableHead,
   TableRow,
   Tooltip,
+  Menu,
+  ListItemIcon,
+  ListItemText,
 } from "@mui/material";
+
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import prdimg01 from "../../assets/dealsImg1.png";
 import prdimg02 from "../../assets/dealsImg3.jpg";
@@ -110,6 +116,40 @@ function Stock() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [error, setError] = useState("");
+
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [selectedStock, setSelectedStock] = useState(null);
+
+  const menuOpen = Boolean(anchorEl);
+
+  const handleMenuOpen = (event, stock) => {
+    setAnchorEl(event.currentTarget);
+    setSelectedStock(stock);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setSelectedStock(null);
+  };
+  const handleMenuEdit = () => {
+    const product = selectedStock;
+
+    handleMenuClose();
+
+    if (product) {
+      handleOpen(product);
+    }
+  };
+
+  const handleMenuDelete = () => {
+    const productId = selectedStock?.id;
+
+    handleMenuClose();
+
+    if (productId != null) {
+      handleDelete(productId);
+    }
+  };
 
   const filteredStocks = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -462,30 +502,20 @@ function Stock() {
                         />
                       </TableCell>
 
-                      <TableCell align="center">
-                        <Box className="stock-actions">
-                          <Tooltip title="Edit stock">
-                            <IconButton
-                              size="small"
-                              className="stock-edit-icon"
-                              onClick={() => handleOpen(stock)}
-                              aria-label={`Edit ${stock.name}`}
-                            >
-                              <EditOutlinedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-
-                          <Tooltip title="Delete stock">
-                            <IconButton
-                              size="small"
-                              className="stock-delete-icon"
-                              onClick={() => handleDelete(stock.id)}
-                              aria-label={`Delete ${stock.name}`}
-                            >
-                              <DeleteOutlineRoundedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
+                      <TableCell
+                        align="center"
+                        className="product-actions-cell"
+                      >
+                        <Tooltip title="More options">
+                          <IconButton
+                            size="small"
+                            className="stock-more-btn"
+                            onClick={(event) => handleMenuOpen(event, stock)}
+                            aria-label={`Options for ${stock.name}`}
+                          >
+                            <MoreVertIcon />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   );
@@ -502,6 +532,45 @@ function Stock() {
               )}
             </TableBody>
           </Table>
+
+          <Menu
+            anchorEl={anchorEl}
+            open={menuOpen}
+            onClose={handleMenuClose}
+            anchorOrigin={{
+              vertical: "bottom",
+              horizontal: "right",
+            }}
+            transformOrigin={{
+              vertical: "top",
+              horizontal: "right",
+            }}
+            slotProps={{
+              paper: {
+                sx: {
+                  minWidth: 165,
+                  borderRadius: "10px",
+                  border: "1px solid #e8eee9",
+                  boxShadow: "0 8px 28px rgba(0,0,0,0.12)",
+                  mt: 0.5,
+                },
+              },
+            }}
+          >
+            <MenuItem onClick={handleMenuEdit}>
+              <ListItemIcon>
+                <EditOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Edit Product</ListItemText>
+            </MenuItem>
+
+            <MenuItem onClick={handleMenuDelete} sx={{ color: "#dc2626" }}>
+              <ListItemIcon sx={{ color: "#dc2626" }}>
+                <DeleteOutlineRoundedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Delete Product</ListItemText>
+            </MenuItem>
+          </Menu>
         </TableContainer>
 
         <Box className="stock-table-footer">
