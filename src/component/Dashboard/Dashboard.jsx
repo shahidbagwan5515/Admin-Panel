@@ -1,6 +1,6 @@
 import "./Dashboard.css";
 import { useState } from "react";
-
+import { Link } from "react-router-dom";
 import {
   Dashboard as DashboardIcon,
   ShoppingBag,
@@ -301,15 +301,9 @@ function Dashboard() {
             <p>Latest orders placed in your store</p>
           </div>
 
-          <button
-            type="button"
-            className="view-all-btn"
-            onClick={() =>
-              window.alert("Connect this button to your Orders page.")
-            }
-          >
+          <Link to="../Order" className="view-all-btn">
             View All <ArrowForward fontSize="small" />
-          </button>
+          </Link>
         </div>
 
         <div className="dashboard-table-wrapper">
