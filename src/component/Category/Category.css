@@ -392,27 +392,30 @@
 }
 
 .category-more-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #e5eae7;
-  border-radius: 9px;
-  background: #fff;
-  color: #64756b;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #647067;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
-.category-more-btn:hover {
-  background: #eaf5ee;
-  border-color: #c9e4d2;
-  color: #08764f;
+.category-more-btn:hover,
+.category-more-btn[aria-expanded="true"] {
+  background: #edf4ef;
+  color: #245c3a;
 }
 
 .category-more-btn svg {
-  font-size: 22px;
+  font-size: 21px;
 }
 
 .category-menu-backdrop {

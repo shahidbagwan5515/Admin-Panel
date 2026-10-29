@@ -13,6 +13,7 @@ import {
   Inventory2Outlined,
   MoreVert,
 } from "@mui/icons-material";
+import { Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
 
 const initialCategories = [
   {
@@ -66,6 +67,45 @@ function Category() {
   const [form, setForm] = useState({ ...emptyForm });
   const [error, setError] = useState("");
   const [openMenuId, setOpenMenuId] = useState(null);
+
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
+  const menuOpen = Boolean(anchorEl);
+
+  const handleMenuOpen = (event, category) => {
+    setAnchorEl(event.currentTarget);
+    setSelectedCategory(category);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setSelectedCategory(null);
+  };
+
+  const handleMenuEdit = () => {
+    if (!selectedCategory) return;
+
+    const category = selectedCategory;
+    handleMenuClose();
+    openEditForm(category);
+  };
+
+  const handleMenuStatus = () => {
+    if (!selectedCategory) return;
+
+    const id = selectedCategory.id;
+    handleMenuClose();
+    toggleStatus(id);
+  };
+
+  const handleMenuDelete = () => {
+    if (!selectedCategory) return;
+
+    const id = selectedCategory.id;
+    handleMenuClose();
+    deleteCategory(id);
+  };
 
   const filteredCategories = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -266,77 +306,20 @@ function Category() {
                         {category.status}
                       </span>
                     </td>
-
                     <td>
-                      <div className="category-actions-menu">
-                        <button
-                          type="button"
-                          className="category-more-btn"
-                          title="More actions"
-                          aria-label={`Actions for ${category.name}`}
-                          aria-expanded={openMenuId === category.id}
-                          onClick={() =>
-                            setOpenMenuId((previous) =>
-                              previous === category.id ? null : category.id,
-                            )
-                          }
-                        >
-                          <MoreVert />
-                        </button>
-
-                        {openMenuId === category.id && (
-                          <>
-                            <button
-                              type="button"
-                              className="category-menu-backdrop"
-                              aria-label="Close actions menu"
-                              onClick={() => setOpenMenuId(null)}
-                            />
-
-                            <div className="category-dropdown">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenMenuId(null);
-                                  openEditForm(category);
-                                }}
-                              >
-                                <EditOutlined />
-                                <span>Edit Category</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenMenuId(null);
-                                  toggleStatus(category.id);
-                                }}
-                              >
-                                <Inventory2Outlined />
-                                <span>
-                                  {category.status === "Active"
-                                    ? "Deactivate"
-                                    : "Activate"}
-                                </span>
-                              </button>
-
-                              <div className="category-menu-divider" />
-
-                              <button
-                                type="button"
-                                className="category-menu-delete"
-                                onClick={() => {
-                                  setOpenMenuId(null);
-                                  deleteCategory(category.id);
-                                }}
-                              >
-                                <DeleteOutlineRounded />
-                                <span>Delete Category</span>
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        className="category-more-btn"
+                        title="More actions"
+                        aria-label={`Actions for ${category.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={
+                          menuOpen && selectedCategory?.id === category.id
+                        }
+                        onClick={(event) => handleMenuOpen(event, category)}
+                      >
+                        <MoreVert />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -353,6 +336,64 @@ function Category() {
               )}
             </tbody>
           </table>
+
+          <Menu
+            anchorEl={anchorEl}
+            open={menuOpen}
+            onClose={handleMenuClose}
+            anchorOrigin={{
+              vertical: "bottom",
+              horizontal: "right",
+            }}
+            transformOrigin={{
+              vertical: "top",
+              horizontal: "right",
+            }}
+            slotProps={{
+              paper: {
+                sx: {
+                  minWidth: 190,
+                  mt: 0.5,
+                  borderRadius: "10px",
+                  border: "1px solid #e8eee9",
+                  boxShadow: "0 8px 28px rgba(0,0,0,0.12)",
+                },
+              },
+            }}
+          >
+            <MenuItem onClick={handleMenuEdit}>
+              <ListItemIcon>
+                <EditOutlined fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Edit Category</ListItemText>
+            </MenuItem>
+
+            <MenuItem onClick={handleMenuStatus}>
+              <ListItemIcon>
+                <Inventory2Outlined fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>
+                {selectedCategory?.status === "Active"
+                  ? "Deactivate Category"
+                  : "Activate Category"}
+              </ListItemText>
+            </MenuItem>
+
+            <MenuItem
+              onClick={handleMenuDelete}
+              sx={{
+                color: "#dc2626",
+                "& .MuiListItemIcon-root": {
+                  color: "#dc2626",
+                },
+              }}
+            >
+              <ListItemIcon>
+                <DeleteOutlineRounded fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Delete Category</ListItemText>
+            </MenuItem>
+          </Menu>
         </div>
 
         <div className="category-list-footer">

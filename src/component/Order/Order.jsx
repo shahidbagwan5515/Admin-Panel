@@ -467,7 +467,6 @@ function Order() {
           <span>
             Showing {filteredOrders.length} of {orders.length} orders
           </span>
-          <span className="order-footer-note">Sample dashboard data</span>
         </div>
       </div>
 
