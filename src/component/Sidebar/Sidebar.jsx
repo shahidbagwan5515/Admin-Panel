@@ -17,7 +17,7 @@ import {
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import BusinessRoundedIcon from "@mui/icons-material/BusinessRounded";
-
+import PaymentOutlinedIcon from "@mui/icons-material/PaymentOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
@@ -61,6 +61,11 @@ const menuItems = [
     title: "Customer",
     icon: <PersonOutlineOutlinedIcon />,
     path: "/Header/Customer",
+  },
+  {
+    title: "Payment",
+    icon: <PaymentOutlinedIcon />,
+    path: "/Header/Payment",
   },
 ];
 function Sidebar({ open, onNavigate, onLogout }) {

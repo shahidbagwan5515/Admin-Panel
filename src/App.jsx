@@ -10,6 +10,8 @@ import Order from "./component/Order/Order";
 import Category from "./component/Category/Category";
 import Product from "./component/Product/Product";
 import Customer from "./component/Customer/Customer";
+import Notification from "./component/Notification/Notification";
+import Payment from "./component/Payment/Payment";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(
@@ -68,6 +70,8 @@ function App() {
           <Route path="Stock" element={<Stock />} />
           <Route path="Product" element={<Product />} />
           <Route path="Customer" element={<Customer />} />
+          <Route path="Notification" element={<Notification />} />
+          <Route path="Payment" element={<Payment />} />
         </Route>
 
         <Route

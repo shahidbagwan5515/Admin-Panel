@@ -59,7 +59,7 @@
   border: 1px solid #dce4e9;
   border-radius: 9px;
   background: #fff;
-  color: #176b45;
+  color: #2563eb;
   font-size: 12px;
   font-weight: 650;
   text-transform: none;
@@ -68,8 +68,8 @@
 }
 
 .order-export-btn.MuiButton-root:hover {
-  border-color: #176b45;
-  background: #f0faf4;
+  border-color: #175cd3;
+  background: #f4f6fa;
   box-shadow: none;
 }
 

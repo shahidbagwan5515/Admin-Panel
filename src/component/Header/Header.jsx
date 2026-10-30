@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import "./Header.css";
 import Sidebar from "../Sidebar/Sidebar";
-import { Outlet, useLocation } from "react-router-dom";
-
+import { Outlet, useLocation, Link } from "react-router-dom";
+import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import {
   AppBar,
   Toolbar,
@@ -71,7 +71,6 @@ function Header({ onLogout }) {
         <Box className="sidebar-overlay" onClick={closeMobileSidebar} />
       )}
 
-      {/* <Sidebar open={sidebarOpen} onNavigate={closeMobileSidebar} /> */}
       <Sidebar
         open={sidebarOpen}
         onNavigate={closeMobileSidebar}
@@ -103,6 +102,11 @@ function Header({ onLogout }) {
             </Box>
 
             <Box className="admin-header-right">
+              <Link to="/Header/Notification">
+                <IconButton>
+                  <NotificationsActiveOutlinedIcon />
+                </IconButton>
+              </Link>
               <Avatar className="admin-avatar">A</Avatar>
 
               <Box className="admin-profile">
