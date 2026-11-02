@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./Category.css";
 
 import {
@@ -7,52 +7,19 @@ import {
   EditOutlined,
   DeleteOutlineRounded,
   CategoryOutlined,
+  Inventory2Outlined,
+  MoreVert,
   SpaOutlined,
   LocalFloristOutlined,
   FavoriteBorderOutlined,
-  Inventory2Outlined,
-  MoreVert,
 } from "@mui/icons-material";
+
 import { Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
 
-const initialCategories = [
-  {
-    id: 1,
-    name: "Herbal Medicines",
-    description: "Natural and herbal healthcare products",
-    products: 24,
-    color: "#eaf1ff",
-    icon: <SpaOutlined />,
-    status: "Active",
-  },
-  {
-    id: 2,
-    name: "Skin Care",
-    description: "Ayurvedic skin care and beauty products",
-    products: 18,
-    color: "#fff1dc",
-    icon: <FavoriteBorderOutlined />,
-    status: "Active",
-  },
-  {
-    id: 3,
-    name: "Hair Care",
-    description: "Natural oils, shampoos and hair products",
-    products: 12,
-    color: "#eee8ff",
-    icon: <LocalFloristOutlined />,
-    status: "Active",
-  },
-  {
-    id: 4,
-    name: "Immunity Boosters",
-    description: "Products for daily wellness and immunity",
-    products: 16,
-    color: "#e3f2fd",
-    icon: <CategoryOutlined />,
-    status: "Inactive",
-  },
-];
+const CATEGORY_API =
+  "http://localhost/Admin-Panel/dashboard/Backend/api/categories.php";
+
+const initialCategories = [];
 
 const emptyForm = {
   name: "",
@@ -60,7 +27,8 @@ const emptyForm = {
 };
 
 function Category() {
-  const [categories, setCategories] = useState(initialCategories);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -72,6 +40,42 @@ function Category() {
   const [selectedCategory, setSelectedCategory] = useState(null);
 
   const menuOpen = Boolean(anchorEl);
+
+  const fetchCategories = async () => {
+    try {
+      setLoading(true);
+
+      const response = await fetch(CATEGORY_API);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Unable to fetch categories");
+      }
+
+      const formattedCategories = (result.data || []).map((item) => ({
+        id: Number(item.id),
+        name: item.name ?? item.NAME ?? "",
+        description: item.description || "",
+        status:
+          String(item.status ?? item.STATUS).toLowerCase() === "active"
+            ? "Active"
+            : "Inactive",
+        products: Number(item.products || 0),
+        color: "#eaf1ff",
+        icon: <CategoryOutlined />,
+      }));
+
+      setCategories(formattedCategories);
+    } catch (error) {
+      console.error("Category Fetch Error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
   const handleMenuOpen = (event, category) => {
     setAnchorEl(event.currentTarget);
@@ -154,7 +158,7 @@ function Category() {
     setError("");
   };
 
-  const saveCategory = (event) => {
+  const saveCategory = async (event) => {
     event.preventDefault();
 
     const name = form.name.trim();
@@ -176,55 +180,93 @@ function Category() {
       return;
     }
 
-    if (editingId !== null) {
-      setCategories((previous) =>
-        previous.map((category) =>
-          category.id === editingId
-            ? { ...category, name, description }
-            : category,
-        ),
-      );
-    } else {
-      setCategories((previous) => [
-        ...previous,
-        {
-          id: Date.now(),
+    try {
+      const response = await fetch(CATEGORY_API, {
+        method: editingId !== null ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...(editingId !== null && { id: editingId }),
           name,
           description,
-          products: 0,
-          color: "#eaf1ff",
-          icon: <CategoryOutlined />,
-          status: "Active",
-        },
-      ]);
-    }
+        }),
+      });
 
-    closeForm();
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        setError(result.message || "Unable to save category.");
+        return;
+      }
+
+      closeForm();
+      await fetchCategories();
+    } catch (error) {
+      console.error("Save Category Error:", error);
+      setError("Server connection failed.");
+    }
   };
 
-  const deleteCategory = (id) => {
+  const deleteCategory = async (id) => {
     const confirmed = window.confirm(
       "Are you sure you want to delete this category?",
     );
 
-    if (confirmed) {
-      setCategories((previous) =>
-        previous.filter((category) => category.id !== id),
-      );
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`${CATEGORY_API}?id=${id}`, {
+        method: "DELETE",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        alert(result.message || "Unable to delete category.");
+        return;
+      }
+
+      await fetchCategories();
+    } catch (error) {
+      console.error("Delete Category Error:", error);
+      alert("Server connection failed.");
     }
   };
 
-  const toggleStatus = (id) => {
-    setCategories((previous) =>
-      previous.map((category) =>
-        category.id === id
-          ? {
-              ...category,
-              status: category.status === "Active" ? "Inactive" : "Active",
-            }
-          : category,
-      ),
-    );
+  const toggleStatus = async (id) => {
+    const category = categories.find((item) => item.id === id);
+
+    if (!category) return;
+
+    const newStatus = category.status === "Active" ? "inactive" : "active";
+
+    try {
+      const response = await fetch(CATEGORY_API, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id,
+          name: category.name,
+          description: category.description || "",
+          status: newStatus,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        alert(result.message || "Unable to update category status.");
+        return;
+      }
+
+      await fetchCategories();
+    } catch (error) {
+      console.error("Status Update Error:", error);
+      alert("Server connection failed.");
+    }
   };
 
   return (

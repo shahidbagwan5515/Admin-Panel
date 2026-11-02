@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -34,74 +33,26 @@ import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
-import prdimg01 from "../../assets/dealsImg1.png";
-import prdimg02 from "../../assets/dealsImg3.jpg";
-import prdimg03 from "../../assets/psorakot.png";
-import prdimg04 from "../../assets/shop.jpeg";
-import prdimg05 from "../../assets/slideImg7.webp";
 
 import "./Stock.css";
+
+const STOCK_API =
+  "http://localhost/Admin-Panel/dashboard/Backend/api/stock.php";
+
+const CATEGORY_API =
+  "http://localhost/Admin-Panel/dashboard/Backend/api/categories.php";
+
+const IMAGE_BASE_URL = "http://localhost/Admin-Panel/dashboard/Backend/";
 
 const FALLBACK_IMAGE =
   "https://placehold.co/100x100/f1f5f9/64748b?text=Product";
 
-const initialStocks = [
-  {
-    id: 1,
-    name: "Ashwagandha Tablets",
-    sku: "AYU-001",
-    category: "Ayurvedic Medicine",
-    quantity: 150,
-    price: 250,
-    supplier: "Patanjali Ayurveda",
-    image: prdimg02,
-  },
-  {
-    id: 2,
-    name: "Amla Juice",
-    sku: "AYU-002",
-    category: "Juice",
-    quantity: 75,
-    price: 180,
-    supplier: "Dabur India",
-    image: prdimg01,
-  },
-  {
-    id: 3,
-    name: "Neem Face Wash",
-    sku: "AYU-003",
-    category: "Skin Care",
-    quantity: 8,
-    price: 120,
-    supplier: "Himalaya Wellness",
-    image: prdimg03,
-  },
-  {
-    id: 4,
-    name: "Chyawanprash",
-    sku: "AYU-004",
-    category: "Health Supplement",
-    quantity: 200,
-    price: 320,
-    supplier: "Dabur India",
-    image: prdimg04,
-  },
-  {
-    id: 5,
-    name: "Aloe Vera Gel",
-    sku: "AYU-005",
-    category: "Skin Care",
-    quantity: 45,
-    price: 150,
-    supplier: "Patanjali Ayurveda",
-    image: prdimg05,
-  },
-];
+const initialStocks = [];
 
 const emptyForm = {
   name: "",
   sku: "",
-  category: "Ayurvedic Medicine",
+  category: "",
   quantity: "",
   price: "",
   supplier: "",
@@ -116,11 +67,177 @@ function Stock() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [error, setError] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedStock, setSelectedStock] = useState(null);
 
   const menuOpen = Boolean(anchorEl);
+
+  const fetchStocks = async () => {
+    try {
+      setLoading(true);
+
+      const response = await fetch(STOCK_API);
+      const result = await response.json();
+
+      if (result.success) {
+        const formattedStocks = (result.data || []).map((item) => ({
+          id: Number(item.id),
+          name: item.product_name,
+          sku: item.product_code,
+          category: item.category_name || "",
+          categoryId: Number(item.category_id),
+          quantity: Number(item.quantity),
+          price: Number(item.unit_price),
+          supplier: item.supplier_name,
+          image: item.image_path
+            ? `http://localhost/Admin-Panel/dashboard/Backend/${item.image_path}`
+            : "",
+        }));
+
+        setStocks(formattedStocks);
+      } else {
+        setError(result.message || "Unable to load stocks.");
+      }
+    } catch (error) {
+      console.error("Stock API Error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(CATEGORY_API);
+      const result = await response.json();
+
+      console.log("Category API Response:", result);
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Unable to load categories.");
+      }
+
+      const formattedCategories = (result.data || [])
+        .filter((item) => {
+          const status = String(item.status ?? item.STATUS ?? "active");
+          return status.toLowerCase() === "active";
+        })
+        .map((item) => ({
+          id: Number(item.id),
+          name: item.name ?? item.NAME ?? "",
+        }));
+
+      setCategories(formattedCategories);
+
+      console.log("Formatted Categories:", formattedCategories);
+    } catch (error) {
+      console.error("Category API Error:", error);
+      setError("Unable to load categories.");
+    }
+  };
+
+  useEffect(() => {
+    fetchStocks();
+    fetchCategories();
+  }, []);
+
+  const handleImageChange = (event) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Only JPG, PNG and WEBP images are allowed.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image size must be less than 5 MB.");
+      return;
+    }
+
+    setSelectedImage(file);
+
+    setForm((prev) => ({
+      ...prev,
+      imagePreview: URL.createObjectURL(file),
+    }));
+
+    setError("");
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    const name = form.name.trim();
+    const sku = form.sku.trim();
+    const supplier = form.supplier.trim();
+    const quantity = Number(form.quantity);
+    const price = Number(form.price);
+
+    if (!name || !sku || !supplier || !form.category) {
+      setError("Please fill in all required fields.");
+      return;
+    }
+
+    if (form.quantity === "" || !Number.isInteger(quantity) || quantity < 0) {
+      setError("Enter a valid quantity.");
+      return;
+    }
+
+    if (form.price === "" || !Number.isFinite(price) || price < 0) {
+      setError("Enter a valid price.");
+      return;
+    }
+
+    const formData = new FormData();
+
+    formData.append("product_name", name);
+    formData.append("product_code", sku);
+    formData.append("category_id", String(form.category));
+    formData.append("quantity", String(quantity));
+    formData.append("unit_price", String(price));
+    formData.append("supplier_name", supplier);
+
+    // Edit mode
+    if (editingId !== null) {
+      formData.append("_method", "PUT");
+      formData.append("id", String(editingId));
+    }
+
+    if (selectedImage) {
+      formData.append("image", selectedImage);
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch(STOCK_API, {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Stock save failed.");
+      }
+
+      await fetchStocks();
+
+      setSelectedImage(null);
+      handleClose();
+    } catch (error) {
+      console.error("Save Stock Error:", error);
+      setError(error.message || "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleMenuOpen = (event, stock) => {
     setAnchorEl(event.currentTarget);
@@ -183,7 +300,7 @@ function Stock() {
       setForm({
         name: stock.name || "",
         sku: stock.sku || "",
-        category: stock.category || "Ayurvedic Medicine",
+        category: String(stock.categoryId || ""),
         quantity: String(stock.quantity ?? ""),
         price: String(stock.price ?? ""),
         supplier: stock.supplier || "",
@@ -194,6 +311,7 @@ function Stock() {
       setForm({ ...emptyForm });
     }
 
+    setSelectedImage(null);
     setError("");
     setOpen(true);
   };
@@ -216,112 +334,32 @@ function Stock() {
     if (error) setError("");
   };
 
-  const handleImageChange = (event) => {
-    const file = event.target.files?.[0];
-
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      setError("Please select a valid image file.");
-      event.target.value = "";
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image size must be less than 5 MB.");
-      event.target.value = "";
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const imageData = reader.result;
-
-      setForm((prev) => ({
-        ...prev,
-        image: imageData,
-        imagePreview: imageData,
-      }));
-
-      setError("");
-    };
-
-    reader.onerror = () => {
-      setError("Unable to read the selected image.");
-    };
-
-    reader.readAsDataURL(file);
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-
-    const name = form.name.trim();
-    const sku = form.sku.trim();
-    const supplier = form.supplier.trim();
-    const quantity = Number(form.quantity);
-    const price = Number(form.price);
-
-    if (!name || !sku || !supplier) {
-      setError("Please fill in all required fields.");
-      return;
-    }
-
-    if (
-      form.quantity === "" ||
-      !Number.isFinite(quantity) ||
-      quantity < 0 ||
-      !Number.isInteger(quantity)
-    ) {
-      setError("Quantity must be a non-negative whole number.");
-      return;
-    }
-
-    if (form.price === "" || !Number.isFinite(price) || price < 0) {
-      setError("Please enter a valid price.");
-      return;
-    }
-
-    const skuExists = stocks.some(
-      (stock) =>
-        stock.sku.toLowerCase() === sku.toLowerCase() && stock.id !== editingId,
-    );
-
-    if (skuExists) {
-      setError("This SKU already exists. Please enter a unique SKU.");
-      return;
-    }
-
-    const stockData = {
-      id: editingId ?? Date.now(),
-      name,
-      sku,
-      category: form.category,
-      quantity,
-      price,
-      supplier,
-      image: form.imagePreview || form.image || "",
-    };
-
-    if (editingId !== null) {
-      setStocks((prev) =>
-        prev.map((stock) => (stock.id === editingId ? stockData : stock)),
-      );
-    } else {
-      setStocks((prev) => [stockData, ...prev]);
-    }
-
-    handleClose();
-  };
-
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     const confirmed = window.confirm(
       "Are you sure you want to delete this stock?",
     );
 
-    if (confirmed) {
-      setStocks((prev) => prev.filter((stock) => stock.id !== id));
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${STOCK_API}?id=${id}`, {
+        method: "DELETE",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Stock delete failed.");
+      }
+
+      await fetchStocks();
+    } catch (error) {
+      console.error("Delete Stock Error:", error);
+      setError(error.message || "Unable to delete stock.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -647,13 +685,14 @@ function Stock() {
                     <Button
                       size="small"
                       color="error"
-                      onClick={() =>
+                      onClick={() => {
+                        setSelectedImage(null);
                         setForm((prev) => ({
                           ...prev,
                           image: "",
                           imagePreview: "",
-                        }))
-                      }
+                        }));
+                      }}
                     >
                       Remove image
                     </Button>
@@ -668,17 +707,20 @@ function Stock() {
                 value={form.category}
                 onChange={handleChange}
                 fullWidth
+                required
+                disabled={categories.length === 0}
               >
-                <MenuItem value="Ayurvedic Medicine">
-                  Ayurvedic Medicine
-                </MenuItem>
-                <MenuItem value="Health Supplement">Health Supplement</MenuItem>
-                <MenuItem value="Ayurvedic Powder">Ayurvedic Powder</MenuItem>
-                <MenuItem value="Juice">Juice</MenuItem>
-                <MenuItem value="Skin Care">Skin Care</MenuItem>
-                <MenuItem value="Hair Care">Hair Care</MenuItem>
-                <MenuItem value="Herbal Drops">Herbal Drops</MenuItem>
-                <MenuItem value="Other">Other</MenuItem>
+                {categories.length > 0 ? (
+                  categories.map((category) => (
+                    <MenuItem key={category.id} value={String(category.id)}>
+                      {category.name}
+                    </MenuItem>
+                  ))
+                ) : (
+                  <MenuItem disabled value="">
+                    No categories available
+                  </MenuItem>
+                )}
               </TextField>
 
               <TextField
