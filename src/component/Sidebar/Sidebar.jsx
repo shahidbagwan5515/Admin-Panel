@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import "./Sidebar.css";
 
 import {
@@ -14,7 +14,6 @@ import {
   Tooltip,
 } from "@mui/material";
 
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import BusinessRoundedIcon from "@mui/icons-material/BusinessRounded";
 import PaymentOutlinedIcon from "@mui/icons-material/PaymentOutlined";
@@ -25,6 +24,12 @@ import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
 import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import PersonOutlineOutlinedIcon from "@mui/icons-material/PersonOutlineOutlined";
+
+const API_URL = "http://localhost/Admin-Panel/dashboard/Backend/api/users.php";
+
+// -------------------------------------
+// SIDEBAR MENU
+// -------------------------------------
 
 const menuItems = [
   {
@@ -53,6 +58,11 @@ const menuItems = [
     path: "/Header/Category",
   },
   {
+    title: "Roles",
+    icon: <PeopleAltOutlinedIcon />,
+    path: "/Header/Roles",
+  },
+  {
     title: "Product",
     icon: <Inventory2OutlinedIcon />,
     path: "/Header/Product",
@@ -68,58 +78,191 @@ const menuItems = [
     path: "/Header/Payment",
   },
 ];
-function Sidebar({ open, onNavigate, onLogout }) {
-  const [activeItem, setActiveItem] = useState("Dashboard");
-  const navigate = useNavigate();
 
-  const handleNavigation = (item) => {
-    setActiveItem(item.title);
+// -------------------------------------
+// NORMALIZE PERMISSION
+// -------------------------------------
 
-    navigate(item.path);
+const normalizePermission = (value) => {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+};
 
-    if (onNavigate) {
-      onNavigate(item.title);
+// -------------------------------------
+// PARSE PERMISSIONS
+// -------------------------------------
+
+const parsePermissions = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
     }
-  };
+  }
+
+  return [];
+};
+
+// -------------------------------------
+// GET STORED USER
+// -------------------------------------
+
+const getStoredUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user")) || null;
+  } catch {
+    return null;
+  }
+};
+
+// -------------------------------------
+// SIDEBAR COMPONENT
+// -------------------------------------
+
+function Sidebar({ open, onNavigate, onLogout }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [user, setUser] = useState(getStoredUser);
+
+  // -------------------------------------
+  // REFRESH USER FROM DATABASE
+  // -------------------------------------
+
+  const refreshUser = useCallback(async () => {
+    const storedUser = getStoredUser();
+
+    if (!storedUser) {
+      setUser(null);
+      return;
+    }
+
+    setUser(storedUser);
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Unable to fetch users.");
+      }
+
+      const users = Array.isArray(result.data) ? result.data : [];
+
+      const latestUser = users.find((item) => {
+        if (storedUser.id && item.id) {
+          return Number(item.id) === Number(storedUser.id);
+        }
+
+        return (
+          storedUser.email &&
+          item.email?.toLowerCase() === storedUser.email.toLowerCase()
+        );
+      });
+
+      if (!latestUser) {
+        console.error("Logged-in user not found.");
+        return;
+      }
+
+      const updatedUser = {
+        ...storedUser,
+        ...latestUser,
+        permissions: parsePermissions(latestUser.permissions),
+      };
+
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+
+      setUser(updatedUser);
+
+      console.log("Updated user permissions:", updatedUser.permissions);
+    } catch (error) {
+      console.error("Sidebar API error:", error);
+    }
+  }, []);
+
+  // -------------------------------------
+  // LISTEN FOR PERMISSION UPDATES
+  // -------------------------------------
+
+  useEffect(() => {
+    refreshUser();
+
+    const handlePermissionUpdate = () => {
+      refreshUser();
+    };
+
+    const handleStorageChange = (event) => {
+      if (event.key === "user") {
+        refreshUser();
+      }
+    };
+
+    window.addEventListener("permissionsUpdated", handlePermissionUpdate);
+
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      window.removeEventListener("permissionsUpdated", handlePermissionUpdate);
+
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, [refreshUser]);
+
+  // -------------------------------------
+  // USER ROLE
+  // -------------------------------------
+
+  const role = normalizePermission(user?.role);
+
+  // Only superAdmin gets full access.
+  const isSuperAdmin = role === "superadmin";
+
+  // -------------------------------------
+  // USER PERMISSIONS
+  // -------------------------------------
+
+  const permissions = parsePermissions(user?.permissions).map(
+    normalizePermission,
+  );
+
+  // -------------------------------------
+  // FILTER SIDEBAR MENU
+  // -------------------------------------
+
+  const filteredMenuItems = isSuperAdmin
+    ? menuItems
+    : menuItems.filter((item) =>
+        permissions.includes(normalizePermission(item.title)),
+      );
+
+  // -------------------------------------
+  // LOGOUT
+  // -------------------------------------
 
   const handleLogout = () => {
     if (onLogout) {
       onLogout();
     } else {
-      console.log("Logout clicked");
+      localStorage.removeItem("user");
+      navigate("/login", { replace: true });
     }
   };
 
-  const renderMenuItem = (item) => (
-    <Tooltip
-      key={item.title}
-      title={open ? "" : item.title}
-      placement="right"
-      arrow
-    >
-      <ListItemButton
-        component={Link}
-        to={item.path}
-        className={`sidebar-menu-item ${
-          activeItem === item.title ? "active" : ""
-        }`}
-        onClick={() => handleNavigation(item)}
-        selected={activeItem === item.title}
-        aria-current={activeItem === item.title ? "page" : undefined}
-      >
-        <ListItemIcon className="sidebar-menu-icon">{item.icon}</ListItemIcon>
-
-        {open && (
-          <ListItemText
-            primary={item.title}
-            slotProps={{
-              primary: { className: "sidebar-menu-text" },
-            }}
-          />
-        )}
-      </ListItemButton>
-    </Tooltip>
-  );
+  // -------------------------------------
+  // UI
+  // -------------------------------------
 
   return (
     <Box
@@ -127,7 +270,6 @@ function Sidebar({ open, onNavigate, onLogout }) {
       className={`sidebar ${open ? "sidebar-open" : "sidebar-collapsed"}`}
       aria-label="Main navigation"
     >
-      {/* Brand */}
       <Box className="sidebar-brand">
         <Box className="sidebar-brand-icon">
           <BusinessRoundedIcon />
@@ -140,18 +282,64 @@ function Sidebar({ open, onNavigate, onLogout }) {
 
       <Divider className="sidebar-divider" />
 
-      {/* Navigation */}
       <Box className="sidebar-navigation">
         {open && (
           <Typography className="sidebar-section-label">MAIN MENU</Typography>
         )}
 
         <List className="sidebar-menu" disablePadding>
-          {menuItems.map(renderMenuItem)}
+          {filteredMenuItems.map((item) => {
+            const isActive = location.pathname === item.path;
+
+            return (
+              <Tooltip
+                key={item.title}
+                title={open ? "" : item.title}
+                placement="right"
+                arrow
+              >
+                <ListItemButton
+                  component={Link}
+                  to={item.path}
+                  className={`sidebar-menu-item ${isActive ? "active" : ""}`}
+                  onClick={() => onNavigate?.(item.title)}
+                  selected={isActive}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  <ListItemIcon className="sidebar-menu-icon">
+                    {item.icon}
+                  </ListItemIcon>
+
+                  {open && (
+                    <ListItemText
+                      primary={item.title}
+                      slotProps={{
+                        primary: {
+                          className: "sidebar-menu-text",
+                        },
+                      }}
+                    />
+                  )}
+                </ListItemButton>
+              </Tooltip>
+            );
+          })}
         </List>
+
+        {!isSuperAdmin && filteredMenuItems.length === 0 && (
+          <Typography
+            sx={{
+              px: 2,
+              py: 2,
+              fontSize: 13,
+              color: "text.secondary",
+            }}
+          >
+            No permissions assigned.
+          </Typography>
+        )}
       </Box>
 
-      {/* Logout */}
       <Box className="sidebar-bottom">
         <Divider className="sidebar-divider" />
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import "./User.css";
 
 import {
@@ -21,6 +21,7 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  CircularProgress,
 } from "@mui/material";
 
 import {
@@ -34,60 +35,45 @@ import {
 
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 
-const initialUsers = [
-  {
-    id: 1,
-    name: "Rahul Sharma",
-    email: "rahul@example.com",
-    role: "Admin",
-    status: "Active",
-    permissions: ["Dashboard", "Users", "Products", "Reports"],
-  },
-  {
-    id: 2,
-    name: "Faizan Patel",
-    email: "faizan@example.com",
-    role: "Manager",
-    status: "Active",
-    permissions: ["Dashboard", "Products", "Reports"],
-  },
-  {
-    id: 3,
-    name: "Amit Verma",
-    email: "amit@example.com",
-    role: "Employee",
-    status: "Inactive",
-    permissions: ["Dashboard"],
-  },
-  {
-    id: 4,
-    name: "Sonu Joshi",
-    email: "sonu@example.com",
-    role: "Employee",
-    status: "Active",
-    permissions: ["Dashboard", "Products"],
-  },
-];
+const API_URL = "http://localhost/Admin-Panel/dashboard/Backend/api/users.php";
 
+const ROLES_API =
+  "http://localhost/Admin-Panel/dashboard/Backend/api/roles.php";
+
+// Permission names must match Sidebar menu titles
 const availablePermissions = [
   "Dashboard",
-  "Users",
-  "Products",
   "Stock",
+  "Users",
   "Orders",
-  "Reports",
-  "Settings",
+  "Category",
+  "Roles",
+  "Product",
+  "Customer",
+  "Payment",
 ];
 
 const emptyForm = {
   name: "",
   email: "",
-  role: "Employee",
+  password: "",
+  role: "",
   status: "Active",
 };
 
+// Handle different API response formats
+const getResponseData = (response) => {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.data)) return response.data;
+  if (Array.isArray(response?.users)) return response.users;
+  if (Array.isArray(response?.roles)) return response.roles;
+
+  return [];
+};
+
 function User() {
-  const [users, setUsers] = useState(initialUsers);
+  const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [search, setSearch] = useState("");
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -99,9 +85,73 @@ function User() {
   const [form, setForm] = useState({ ...emptyForm });
   const [permissions, setPermissions] = useState([]);
 
-  // Three-dot menu state
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
   const [actionAnchor, setActionAnchor] = useState(null);
   const [actionUser, setActionUser] = useState(null);
+
+  // Fetch users from database
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch(API_URL);
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.message || "Unable to fetch users.");
+      }
+
+      const userList = getResponseData(result);
+
+      setUsers(
+        userList.map((user) => ({
+          ...user,
+          id: Number(user.id),
+          name: user.name || "",
+          email: user.email || "",
+          role: user.role || "",
+          status: user.status || "Active",
+          permissions: Array.isArray(user.permissions)
+            ? user.permissions
+            : typeof user.permissions === "string"
+              ? JSON.parse(user.permissions || "[]")
+              : [],
+        })),
+      );
+    } catch (error) {
+      console.error("Fetch users error:", error);
+      alert(error.message || "Failed to load users.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch roles from roles.php
+  const fetchRoles = async () => {
+    try {
+      const response = await fetch(ROLES_API);
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.message || "Unable to fetch roles.");
+      }
+
+      const roleList = getResponseData(result);
+
+      setRoles(
+        roleList
+          .map((role) => (typeof role === "string" ? role : role.name))
+          .filter(Boolean),
+      );
+    } catch (error) {
+      console.error("Fetch roles error:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+    fetchRoles();
+  }, []);
 
   // Search users
   const filteredUsers = useMemo(() => {
@@ -118,7 +168,13 @@ function User() {
   // Open Add User dialog
   const handleAdd = () => {
     setEditingUser(null);
-    setForm({ ...emptyForm, status: "Active" });
+
+    setForm({
+      ...emptyForm,
+      role: roles[0] || "",
+      status: "Active",
+    });
+
     setDialogOpen(true);
   };
 
@@ -129,6 +185,7 @@ function User() {
     setForm({
       name: user.name,
       email: user.email,
+      password: "",
       role: user.role,
       status: user.status,
     });
@@ -136,10 +193,25 @@ function User() {
     setDialogOpen(true);
   };
 
-  // Save new or edited user
-  const handleSave = () => {
-    if (!form.name.trim() || !form.email.trim()) {
-      alert("Please enter user name and email.");
+  // Add or update user through API
+  const handleSave = async () => {
+    if (
+      !form.name.trim() ||
+      !form.email.trim() ||
+      !form.role ||
+      (!editingUser && !form.password.trim())
+    ) {
+      alert("Please enter name, email, password and role.");
+      return;
+    }
+
+    if (!editingUser && form.password.length < 6) {
+      alert("Password must be at least 6 characters long.");
+      return;
+    }
+
+    if (editingUser && form.password && form.password.length < 6) {
+      alert("New password must be at least 6 characters long.");
       return;
     }
 
@@ -154,53 +226,93 @@ function User() {
       return;
     }
 
-    if (editingUser) {
-      // Update user details and selected status
-      setUsers((prev) =>
-        prev.map((user) =>
-          user.id === editingUser.id
-            ? {
-                ...user,
-                name: form.name.trim(),
-                email: form.email.trim(),
-                role: form.role,
-                status: form.status,
-              }
-            : user,
-        ),
-      );
-    } else {
-      // New users are always Active
-      setUsers((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          name: form.name.trim(),
-          email: form.email.trim(),
-          role: form.role,
-          status: "Active",
-          permissions: ["Dashboard"],
-        },
-      ]);
+    const payload = {
+      name: form.name.trim(),
+      email: form.email.trim(),
+      role: form.role,
+      status: editingUser ? form.status : "Active",
+      permissions: editingUser
+        ? editingUser.permissions || ["Dashboard"]
+        : ["Dashboard"],
+    };
+
+    // Send password only when entered
+    if (form.password) {
+      payload.password = form.password;
     }
 
-    setDialogOpen(false);
-    setEditingUser(null);
-    setForm({ ...emptyForm });
+    if (editingUser) {
+      payload.id = editingUser.id;
+    }
+
+    try {
+      setSaving(true);
+
+      const response = await fetch(API_URL, {
+        method: editingUser ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.message || "Unable to save user.");
+      }
+
+      await fetchUsers();
+
+      setDialogOpen(false);
+      setEditingUser(null);
+      setForm({ ...emptyForm });
+
+      alert(
+        editingUser
+          ? "User updated successfully."
+          : "User created successfully.",
+      );
+    } catch (error) {
+      console.error("Save user error:", error);
+      alert(error.message || "Failed to save user.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // Delete user
-  const handleDelete = (user) => {
+  // Delete user through API
+  const handleDelete = async (user) => {
     const confirmed = window.confirm(
       `Are you sure you want to delete ${user.name}?`,
     );
 
-    if (confirmed) {
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(
+        `${API_URL}?id=${encodeURIComponent(user.id)}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.message || "Unable to delete user.");
+      }
+
       setUsers((prev) => prev.filter((item) => item.id !== user.id));
+
+      alert("User deleted successfully.");
+    } catch (error) {
+      console.error("Delete user error:", error);
+      alert(error.message || "Failed to delete user.");
     }
   };
 
-  // Open three-dot menu
+  // Three-dot menu
   const handleActionClick = (event, user) => {
     setActionAnchor(event.currentTarget);
     setActionUser(user);
@@ -215,27 +327,21 @@ function User() {
     const user = actionUser;
     handleActionClose();
 
-    if (user) {
-      handleEdit(user);
-    }
+    if (user) handleEdit(user);
   };
 
   const handleMenuDelete = () => {
     const user = actionUser;
     handleActionClose();
 
-    if (user) {
-      handleDelete(user);
-    }
+    if (user) handleDelete(user);
   };
 
   const handleMenuPermissions = () => {
     const user = actionUser;
     handleActionClose();
 
-    if (user) {
-      handlePermissionOpen(user);
-    }
+    if (user) handlePermissionOpen(user);
   };
 
   // Open permissions dialog
@@ -245,7 +351,7 @@ function User() {
     setPermissionOpen(true);
   };
 
-  // Toggle a permission
+  // Toggle permission
   const handlePermissionChange = (permission) => {
     setPermissions((prev) =>
       prev.includes(permission)
@@ -254,20 +360,57 @@ function User() {
     );
   };
 
-  // Save permissions
-  const handlePermissionSave = () => {
+  // Save permissions through PUT API
+  const handlePermissionSave = async () => {
     if (!selectedUser) return;
 
-    setUsers((prev) =>
-      prev.map((user) =>
-        user.id === selectedUser.id
-          ? { ...user, permissions: [...permissions] }
-          : user,
-      ),
-    );
+    try {
+      setSaving(true);
 
-    setPermissionOpen(false);
-    setSelectedUser(null);
+      const payload = {
+        id: selectedUser.id,
+        name: selectedUser.name,
+        email: selectedUser.email,
+        role: selectedUser.role,
+        status: selectedUser.status,
+        permissions: permissions,
+      };
+
+      const response = await fetch(API_URL, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.message || "Unable to update permissions.");
+      }
+
+      setUsers((prev) =>
+        prev.map((user) =>
+          user.id === selectedUser.id
+            ? { ...user, permissions: [...permissions] }
+            : user,
+        ),
+      );
+
+      // Refresh Sidebar permissions in the same tab
+      window.dispatchEvent(new Event("permissionsUpdated"));
+
+      setPermissionOpen(false);
+      setSelectedUser(null);
+
+      alert("Permissions updated successfully.");
+    } catch (error) {
+      console.error("Permission update error:", error);
+      alert(error.message || "Failed to update permissions.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -331,74 +474,77 @@ function User() {
             </thead>
 
             <tbody>
-              {filteredUsers.map((user) => (
-                <tr key={user.id}>
-                  {/* User details */}
-                  <td>
-                    <div className="user-profile-cell">
-                      <div className="user-avatar">
-                        {user.name.charAt(0).toUpperCase()}
-                      </div>
-
-                      <div className="user-profile-info">
-                        <strong>{user.name}</strong>
-                        <span>{user.email}</span>
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Role */}
-                  <td>
-                    <span
-                      className={`user-role role-${user.role.toLowerCase()}`}
-                    >
-                      {user.role}
-                    </span>
-                  </td>
-
-                  {/* Status */}
-                  <td>
-                    <Chip
-                      size="small"
-                      label={user.status}
-                      className={
-                        user.status === "Active"
-                          ? "user-status-active"
-                          : "user-status-inactive"
-                      }
-                    />
-                  </td>
-
-                  {/* Permissions count */}
-                  <td>
-                    <span className="user-permission-count">
-                      {user.permissions?.length || 0} permissions
-                    </span>
-                  </td>
-
-                  {/* Three-dot action menu */}
-                  <td>
-                    <IconButton
-                      className="user-menu-button"
-                      aria-label={`Actions for ${user.name}`}
-                      aria-haspopup="true"
-                      aria-expanded={
-                        actionUser?.id === user.id && Boolean(actionAnchor)
-                      }
-                      onClick={(event) => handleActionClick(event, user)}
-                    >
-                      <MoreVert />
-                    </IconButton>
-                  </td>
-                </tr>
-              ))}
-
-              {filteredUsers.length === 0 && (
+              {loading ? (
                 <tr>
                   <td colSpan="5" className="user-empty">
-                    No users found.
+                    <CircularProgress size={24} />
                   </td>
                 </tr>
+              ) : (
+                <>
+                  {filteredUsers.map((user) => (
+                    <tr key={user.id}>
+                      <td>
+                        <div className="user-profile-cell">
+                          <div className="user-avatar">
+                            {user.name.charAt(0).toUpperCase()}
+                          </div>
+
+                          <div className="user-profile-info">
+                            <strong>{user.name}</strong>
+                            <span>{user.email}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>
+                        <span
+                          className={`user-role role-${user.role
+                            .toLowerCase()
+                            .replace(/\s+/g, "-")}`}
+                        >
+                          {user.role}
+                        </span>
+                      </td>
+
+                      <td>
+                        <Chip
+                          size="small"
+                          label={user.status}
+                          className={
+                            user.status === "Active"
+                              ? "user-status-active"
+                              : "user-status-inactive"
+                          }
+                        />
+                      </td>
+
+                      <td>
+                        <span className="user-permission-count">
+                          {user.permissions?.length || 0} permissions
+                        </span>
+                      </td>
+
+                      <td>
+                        <IconButton
+                          className="user-menu-button"
+                          aria-label={`Actions for ${user.name}`}
+                          onClick={(event) => handleActionClick(event, user)}
+                        >
+                          <MoreVert />
+                        </IconButton>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {filteredUsers.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="user-empty">
+                        No users found.
+                      </td>
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
@@ -409,7 +555,7 @@ function User() {
         </div>
       </div>
 
-      {/* Three-dot dropdown menu */}
+      {/* Three-dot menu */}
       <Menu
         anchorEl={actionAnchor}
         open={Boolean(actionAnchor)}
@@ -457,7 +603,7 @@ function User() {
       {/* Add / Edit User Dialog */}
       <Dialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => !saving && setDialogOpen(false)}
         fullWidth
         maxWidth="sm"
         PaperProps={{ className: "user-dialog" }}
@@ -495,22 +641,44 @@ function User() {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
 
+            {/* Password Field */}
+            <TextField
+              label={editingUser ? "New Password (Optional)" : "Password"}
+              type="password"
+              fullWidth
+              required={!editingUser}
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              autoComplete="new-password"
+              inputProps={{ minLength: 6 }}
+              helperText={
+                editingUser
+                  ? "Leave blank to keep the current password."
+                  : "Minimum 6 characters. This password will be used for login."
+              }
+            />
+
             <TextField
               select
               label="Role"
               fullWidth
+              required
               value={form.role}
               onChange={(e) => setForm({ ...form, role: e.target.value })}
-              slotProps={{
-                select: { native: true },
-              }}
             >
-              <option value="Admin">Admin</option>
-              <option value="Manager">Manager</option>
-              <option value="Employee">Employee</option>
+              {roles.map((role) => (
+                <MenuItem key={role} value={role}>
+                  {role}
+                </MenuItem>
+              ))}
             </TextField>
 
-            {/* Status toggle only in Edit User */}
+            {roles.length === 0 && (
+              <Typography color="error" variant="caption">
+                No roles found. Please add roles first.
+              </Typography>
+            )}
+
             {editingUser && (
               <FormControlLabel
                 className="user-active-toggle"
@@ -535,12 +703,26 @@ function User() {
         </DialogContent>
 
         <DialogActions className="user-dialog-actions">
-          <Button variant="outlined" onClick={() => setDialogOpen(false)}>
+          <Button
+            variant="outlined"
+            onClick={() => setDialogOpen(false)}
+            disabled={saving}
+          >
             Cancel
           </Button>
 
-          <Button variant="contained" onClick={handleSave}>
-            {editingUser ? "Save Changes" : "Create User"}
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={saving || roles.length === 0}
+          >
+            {saving ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : editingUser ? (
+              "Save Changes"
+            ) : (
+              "Create User"
+            )}
           </Button>
         </DialogActions>
       </Dialog>
@@ -548,7 +730,7 @@ function User() {
       {/* Manage Permissions Dialog */}
       <Dialog
         open={permissionOpen}
-        onClose={() => setPermissionOpen(false)}
+        onClose={() => !saving && setPermissionOpen(false)}
         fullWidth
         maxWidth="xs"
         PaperProps={{ className: "user-dialog" }}
@@ -574,24 +756,39 @@ function User() {
 
           <FormGroup className="permission-list">
             {availablePermissions.map((permission) => (
-              <label key={permission}>
-                <Checkbox
-                  checked={permissions.includes(permission)}
-                  onChange={() => handlePermissionChange(permission)}
-                />
-                {permission}
-              </label>
+              <FormControlLabel
+                key={permission}
+                control={
+                  <Checkbox
+                    checked={permissions.includes(permission)}
+                    onChange={() => handlePermissionChange(permission)}
+                  />
+                }
+                label={permission}
+              />
             ))}
           </FormGroup>
         </DialogContent>
 
         <DialogActions className="user-dialog-actions">
-          <Button variant="outlined" onClick={() => setPermissionOpen(false)}>
+          <Button
+            variant="outlined"
+            onClick={() => setPermissionOpen(false)}
+            disabled={saving}
+          >
             Cancel
           </Button>
 
-          <Button variant="contained" onClick={handlePermissionSave}>
-            Save Permissions
+          <Button
+            variant="contained"
+            onClick={handlePermissionSave}
+            disabled={saving}
+          >
+            {saving ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : (
+              "Save Permissions"
+            )}
           </Button>
         </DialogActions>
       </Dialog>

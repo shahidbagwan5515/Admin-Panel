@@ -42,8 +42,6 @@ const STOCK_API =
 const CATEGORY_API =
   "http://localhost/Admin-Panel/dashboard/Backend/api/categories.php";
 
-const IMAGE_BASE_URL = "http://localhost/Admin-Panel/dashboard/Backend/";
-
 const FALLBACK_IMAGE =
   "https://placehold.co/100x100/f1f5f9/64748b?text=Product";
 

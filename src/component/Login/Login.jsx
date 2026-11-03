@@ -19,6 +19,8 @@ import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined
 
 import "./Login.css";
 
+const API_URL = "http://localhost/Admin-Panel/dashboard/Backend/api/login.php";
+
 function Login({ onLogin }) {
   const navigate = useNavigate();
 
@@ -27,28 +29,59 @@ function Login({ onLogin }) {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
     const trimmedEmail = email.trim();
-    const trimmedPassword = password.trim();
 
-    if (!trimmedEmail || !trimmedPassword) {
+    if (!trimmedEmail || !password) {
       setError("Please enter your email and password.");
       return;
     }
 
-    // Demo login: accepts any non-empty email and password.
-    if (typeof onLogin === "function") {
-      onLogin({
-        email: trimmedEmail,
-        rememberMe,
-      });
-    }
+    try {
+      setLoading(true);
 
-    navigate("/adminpanel", { replace: true });
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: trimmedEmail,
+          password,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        setError(result.message || "Invalid email or password.");
+        return;
+      }
+
+      const user = result.data;
+
+      // Sidebar existing localStorage.user se user details read karta hai.
+      localStorage.setItem("user", JSON.stringify(user));
+
+      if (typeof onLogin === "function") {
+        onLogin({
+          ...user,
+          rememberMe,
+        });
+      }
+
+      navigate("/adminpanel", { replace: true });
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("Server connection failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -110,7 +143,7 @@ function Login({ onLogin }) {
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
-                      onClick={() => setShowPassword((previous) => !previous)}
+                      onClick={() => setShowPassword((prev) => !prev)}
                       edge="end"
                       type="button"
                       aria-label={
@@ -153,8 +186,9 @@ function Login({ onLogin }) {
             fullWidth
             variant="contained"
             className="login-submit"
+            disabled={loading}
           >
-            Sign In
+            {loading ? "Signing In..." : "Sign In"}
           </Button>
         </Box>
       </Box>
