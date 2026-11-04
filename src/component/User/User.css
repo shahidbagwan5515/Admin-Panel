@@ -240,19 +240,34 @@
   white-space: nowrap;
 }
 
-.role-admin {
-  color: #6941c6;
-  background: #f4f0ff;
-}
-
 .role-manager {
-  color: #175cd3;
-  background: #eff6ff;
+  color: #175CD3;
+  background: #EFF8FF;
 }
 
 .role-employee {
   color: #475467;
-  background: #f2f4f7;
+  background: #F2F4F7;
+}
+
+.role-salesmean {
+  color: #027A48;
+  background: #ECFDF3;
+}
+
+.role-deliveryboy {
+  color: #B54708;
+  background: #FFFAEB;
+}
+
+.role-superadmin {
+  color: #6941C6;
+  background: #F4F0FF;
+}
+
+.role-admin {
+  color: #C11574;
+  background: #FDF2FA;
 }
 
 /* ================================

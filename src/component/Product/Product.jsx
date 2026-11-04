@@ -26,22 +26,13 @@ const API_URL =
 const FALLBACK_IMAGE =
   "https://placehold.co/300x300/f3f4f6/64748b?text=No+Image";
 
-const categories = [
-  "Ayurvedic Medicine",
-  "Health Supplement",
-  "Ayurvedic Powder",
-  "Juice",
-  "Skin Care",
-  "Hair Care",
-  "Herbal Drops",
-  "Immunity Boosters",
-  "Other",
-];
+const CATEGORY_API =
+  "http://localhost/Admin-Panel/dashboard/Backend/api/categories.php";
 
 const emptyForm = {
   name: "",
   sku: "",
-  category: "Ayurvedic Medicine",
+  category: "",
   stock: "",
   price: "",
   supplier: "",
@@ -54,6 +45,8 @@ function Product() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
@@ -90,10 +83,42 @@ function Product() {
     }
   };
 
+  // ==============================
+  // FETCH Category API
+  // ==============================
+
+  const fetchCategories = async () => {
+    try {
+      setCategoriesLoading(true);
+
+      const response = await fetch(CATEGORY_API);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Unable to fetch categories.");
+      }
+
+      const formattedCategories = (result.data || [])
+        .filter(
+          (item) =>
+            String(item.status ?? item.STATUS ?? "active").toLowerCase() ===
+            "active",
+        )
+        .map((item) => item.name ?? item.NAME ?? "")
+        .filter(Boolean);
+
+      setCategories(formattedCategories);
+    } catch (error) {
+      console.error("Category Fetch Error:", error);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
+    fetchCategories();
   }, []);
-
   // ==============================
   // MENU HANDLERS
   // ==============================
@@ -915,9 +940,23 @@ function Product() {
                   name="category"
                   value={form.category}
                   onChange={handleChange}
+                  required
+                  disabled={categoriesLoading}
                 >
+                  <option value="">
+                    {categoriesLoading
+                      ? "Loading categories..."
+                      : "Select Category"}
+                  </option>
+
+                  {form.category && !categories.includes(form.category) && (
+                    <option value={form.category}>{form.category}</option>
+                  )}
+
                   {categories.map((category) => (
-                    <option key={category}>{category}</option>
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
                   ))}
                 </select>
               </div>

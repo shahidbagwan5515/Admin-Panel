@@ -26,6 +26,33 @@ function Header({ onLogout }) {
 
   const location = useLocation();
 
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user")) || {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    const handleUserUpdate = () => {
+      try {
+        setUser(JSON.parse(localStorage.getItem("user")) || {});
+      } catch {
+        setUser({});
+      }
+    };
+
+    window.addEventListener("storage", handleUserUpdate);
+
+    return () => {
+      window.removeEventListener("storage", handleUserUpdate);
+    };
+  }, []);
+
+  const username = user.name || user.email?.split("@")[0] || "User";
+  const userRole = user.role || "User";
+
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth <= 600;
@@ -107,11 +134,14 @@ function Header({ onLogout }) {
                   <NotificationsActiveOutlinedIcon />
                 </IconButton>
               </Link>
-              <Avatar className="admin-avatar">A</Avatar>
+              <Avatar className="admin-avatar">
+                {username.charAt(0).toUpperCase()}
+              </Avatar>
 
               <Box className="admin-profile">
-                <Typography className="admin-name">Admin</Typography>
-                <Typography className="admin-role">Administrator</Typography>
+                <Typography className="admin-name">{username}</Typography>
+
+                <Typography className="admin-role">{userRole}</Typography>
               </Box>
             </Box>
           </Toolbar>
