@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./Product.css";
+
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import {
   Menu,
@@ -9,6 +10,7 @@ import {
   IconButton,
   Tooltip,
 } from "@mui/material";
+
 import Add from "@mui/icons-material/Add";
 import Search from "@mui/icons-material/Search";
 import Close from "@mui/icons-material/Close";
@@ -18,71 +20,11 @@ import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import TrendingUp from "@mui/icons-material/TrendingUp";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
-import prdimg01 from "../../assets/dealsImg1.png";
-import prdimg02 from "../../assets/dealsImg3.jpg";
-import prdimg03 from "../../assets/psorakot.png";
-import prdimg04 from "../../assets/shop.jpeg";
-import prdimg05 from "../../assets/slideImg7.webp";
+const API_URL =
+  "http://localhost/Admin-Panel/dashboard/Backend/api/product.php";
+
 const FALLBACK_IMAGE =
   "https://placehold.co/300x300/f3f4f6/64748b?text=No+Image";
-
-const initialProducts = [
-  {
-    id: 1,
-    name: "Ashwagandha Tablets",
-    sku: "AYU-001",
-    category: "Ayurvedic Medicine",
-    stock: 150,
-    price: 250,
-    supplier: "Patanjali Ayurveda",
-    image: prdimg02,
-    status: "Active",
-  },
-  {
-    id: 2,
-    name: "Amla Juice",
-    sku: "AYU-002",
-    category: "Juice",
-    stock: 75,
-    price: 180,
-    supplier: "Dabur India",
-    image: prdimg01,
-    status: "Active",
-  },
-  {
-    id: 3,
-    name: "Neem Face Wash",
-    sku: "AYU-003",
-    category: "Skin Care",
-    stock: 8,
-    price: 120,
-    supplier: "Himalaya Wellness",
-    image: prdimg03,
-    status: "Active",
-  },
-  {
-    id: 4,
-    name: "Chyawanprash",
-    sku: "AYU-004",
-    category: "Health Supplement",
-    stock: 200,
-    price: 320,
-    supplier: "Dabur India",
-    image: prdimg04,
-    status: "Active",
-  },
-  {
-    id: 5,
-    name: "Aloe Vera Gel",
-    sku: "AYU-005",
-    category: "Skin Care",
-    stock: 45,
-    price: 150,
-    supplier: "Patanjali Ayurveda",
-    image: prdimg05,
-    status: "Active",
-  },
-];
 
 const categories = [
   "Ayurvedic Medicine",
@@ -105,13 +47,18 @@ const emptyForm = {
   supplier: "",
   images: [],
   description: "",
+  status: "Active",
 };
 
 function Product() {
-  const [products, setProducts] = useState(initialProducts);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [statusFilter, setStatusFilter] = useState("All Status");
+
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ ...emptyForm });
@@ -119,6 +66,37 @@ function Product() {
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedStock, setSelectedStock] = useState(null);
+
+  // ==============================
+  // FETCH PRODUCTS API
+  // ==============================
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+
+      const response = await fetch(API_URL);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Unable to fetch products.");
+      }
+
+      setProducts(Array.isArray(result.data) ? result.data : []);
+    } catch (err) {
+      setError(err.message || "Server se products load nahi hue.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  // ==============================
+  // MENU HANDLERS
+  // ==============================
 
   const menuOpen = Boolean(anchorEl);
 
@@ -152,6 +130,10 @@ function Product() {
     }
   };
 
+  // ==============================
+  // SEARCH AND FILTER
+  // ==============================
+
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
 
@@ -178,6 +160,10 @@ function Product() {
     });
   }, [products, search, categoryFilter, statusFilter]);
 
+  // ==============================
+  // DASHBOARD STATISTICS
+  // ==============================
+
   const activeCount = products.filter(
     (product) => product.status === "Active",
   ).length;
@@ -198,6 +184,10 @@ function Product() {
       maximumFractionDigits: 2,
     }).format(Number(price) || 0);
 
+  // ==============================
+  // ADD PRODUCT FORM
+  // ==============================
+
   const openAddForm = () => {
     setEditingId(null);
     setForm({ ...emptyForm });
@@ -205,8 +195,13 @@ function Product() {
     setShowForm(true);
   };
 
+  // ==============================
+  // EDIT PRODUCT FORM
+  // ==============================
+
   const openEditForm = (product) => {
     setEditingId(product.id);
+
     setForm({
       name: product.name,
       sku: product.sku,
@@ -214,12 +209,55 @@ function Product() {
       stock: String(product.stock),
       price: String(product.price),
       supplier: product.supplier || "",
-      images: product.images || (product.image ? [product.image] : []),
+      images: (() => {
+        let images = product.images || [];
+
+        if (typeof images === "string") {
+          try {
+            images = JSON.parse(images);
+          } catch {
+            images = [images];
+          }
+        }
+
+        if (!Array.isArray(images)) {
+          images = [];
+        }
+
+        return images.filter(
+          (image) => typeof image === "string" && image.trim() !== "",
+        );
+      })(),
       description: product.description || "",
+      status: product.status || "Active",
     });
+
     setError("");
     setShowForm(true);
   };
+
+  const getImageUrl = (image) => {
+    if (!image || typeof image !== "string") {
+      return FALLBACK_IMAGE;
+    }
+
+    if (
+      image.startsWith("data:image/") ||
+      image.startsWith("http://") ||
+      image.startsWith("https://")
+    ) {
+      return image;
+    }
+
+    if (image.startsWith("/")) {
+      return `http://localhost${image}`;
+    }
+
+    return `http://localhost/Admin-Panel/dashboard/Backend/${image}`;
+  };
+  // ==============================
+  // CLOSE FORM
+  // ==============================
 
   const closeForm = () => {
     setShowForm(false);
@@ -228,30 +266,42 @@ function Product() {
     setError("");
   };
 
+  // ==============================
+  // HANDLE INPUT CHANGE
+  // ==============================
+
   const handleChange = (event) => {
     const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+
     setError("");
   };
 
+  // ==============================
+  // IMAGE UPLOAD
+  // ==============================
+
   const handleImageChange = (event) => {
     const files = Array.from(event.target.files || []);
-    const validImages = [];
     const maxSize = 5 * 1024 * 1024;
 
-    for (const file of files) {
+    const validImages = files.filter((file) => {
       if (!file.type.startsWith("image/")) {
         setError("Please select valid image files.");
-        continue;
+        return false;
       }
 
       if (file.size > maxSize) {
         setError(`${file.name} must be less than 5 MB.`);
-        continue;
+        return false;
       }
 
-      validImages.push(file);
-    }
+      return true;
+    });
 
     Promise.all(
       validImages.map(
@@ -260,35 +310,43 @@ function Product() {
             const reader = new FileReader();
 
             reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject();
+            reader.onerror = reject;
 
             reader.readAsDataURL(file);
           }),
       ),
     )
       .then((newImages) => {
-        setForm((previous) => ({
-          ...previous,
-          images: [...previous.images, ...newImages],
-        }));
+        setForm((previous) => {
+          const remainingSlots = Math.max(0, 6 - previous.images.length);
+
+          return {
+            ...previous,
+            images: [...previous.images, ...newImages.slice(0, remainingSlots)],
+          };
+        });
       })
       .catch(() => {
-        setError("Unable to read one or more images.");
+        setError("Unable to read selected images.");
       });
 
     event.target.value = "";
   };
+  // ==============================
+  // ADD / UPDATE PRODUCT API
+  // ==============================
 
-  const saveProduct = (event) => {
+  const saveProduct = async (event) => {
     event.preventDefault();
 
     const name = form.name.trim();
     const sku = form.sku.trim();
     const supplier = form.supplier.trim();
+
     const stock = Number(form.stock);
     const price = Number(form.price);
 
-    if (!name || !sku || !supplier) {
+    if (!name || !sku || !supplier || !form.category) {
       setError("Please fill in all required fields.");
       return;
     }
@@ -308,19 +366,12 @@ function Product() {
       return;
     }
 
-    const duplicateSku = products.some(
-      (product) =>
-        product.sku.toLowerCase() === sku.toLowerCase() &&
-        product.id !== editingId,
-    );
-
-    if (duplicateSku) {
-      setError("This SKU already exists. Enter a unique SKU.");
+    if (form.images.length > 6) {
+      setError("Maximum 6 images are allowed.");
       return;
     }
 
-    const updatedProduct = {
-      id: editingId ?? Date.now(),
+    const payload = {
       name,
       sku,
       category: form.category,
@@ -329,57 +380,138 @@ function Product() {
       supplier,
       images: form.images,
       description: form.description,
+      status: form.status || "Active",
     };
 
-    if (editingId !== null) {
-      setProducts((previous) =>
-        previous.map((product) =>
-          product.id === editingId ? updatedProduct : product,
-        ),
-      );
-    } else {
-      setProducts((previous) => [updatedProduct, ...previous]);
-    }
+    try {
+      setSaving(true);
+      setError("");
 
-    closeForm();
+      const isEditing = editingId !== null;
+
+      const response = await fetch(
+        isEditing ? `${API_URL}?id=${editingId}` : API_URL,
+        {
+          method: isEditing ? "PUT" : "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify(payload),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Product save nahi hua.");
+      }
+
+      await fetchProducts();
+
+      closeForm();
+    } catch (err) {
+      setError(err.message || "Unable to save product. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const deleteProduct = (id) => {
-    if (window.confirm("Are you sure you want to delete this product?")) {
+  // ==============================
+  // DELETE PRODUCT API
+  // ==============================
+
+  const deleteProduct = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this product?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}?id=${id}`, {
+        method: "DELETE",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Product delete nahi hua.");
+      }
+
       setProducts((previous) =>
-        previous.filter((product) => product.id !== id),
+        previous.filter((product) => Number(product.id) !== Number(id)),
       );
+    } catch (err) {
+      window.alert(err.message || "Unable to delete product.");
     }
   };
+
+  // ==============================
+  // STOCK STATUS
+  // ==============================
 
   const getStockStatus = (stock) => {
     if (Number(stock) === 0) {
-      return { label: "Out of Stock", className: "out" };
+      return {
+        label: "Out of Stock",
+        className: "out",
+      };
     }
 
     if (Number(stock) <= 10) {
-      return { label: "Low Stock", className: "low" };
+      return {
+        label: "Low Stock",
+        className: "low",
+      };
     }
 
-    return { label: "In Stock", className: "good" };
+    return {
+      label: "In Stock",
+      className: "good",
+    };
   };
 
+  // ==============================
+  // PRODUCT IMAGE
+  // ==============================
+
   const renderProductImage = (product, large = false) => {
-    const imageSrc = product.images?.[0] || product.image || FALLBACK_IMAGE;
+    let firstImage = FALLBACK_IMAGE;
+
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      firstImage = product.images[0];
+    } else if (typeof product.images === "string") {
+      try {
+        const parsedImages = JSON.parse(product.images);
+
+        if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+          firstImage = parsedImages[0];
+        } else {
+          firstImage = product.images;
+        }
+      } catch {
+        firstImage = product.images || FALLBACK_IMAGE;
+      }
+    } else if (product.image) {
+      firstImage = product.image;
+    }
 
     return (
       <div className={`product-thumbnail ${large ? "large" : ""}`}>
         <img
-          src={imageSrc}
+          src={getImageUrl(firstImage)}
           alt={product.name}
-          onError={(event) => {
-            event.currentTarget.onerror = null;
-            event.currentTarget.src = FALLBACK_IMAGE;
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = FALLBACK_IMAGE;
           }}
         />
       </div>
     );
   };
+  // ==============================
+  // UI
+  // ==============================
 
   return (
     <div className="product-page">
@@ -395,11 +527,14 @@ function Product() {
         </button>
       </div>
 
+      {/* DASHBOARD STATISTICS */}
+
       <div className="product-stats">
         <div className="product-stat-card">
           <div className="product-stat-icon green">
             <Inventory2Outlined />
           </div>
+
           <div>
             <span>Total Products</span>
             <h2>{products.length}</h2>
@@ -411,6 +546,7 @@ function Product() {
           <div className="product-stat-icon mint">
             <TrendingUp />
           </div>
+
           <div>
             <span>Active Products</span>
             <h2>{activeCount}</h2>
@@ -422,6 +558,7 @@ function Product() {
           <div className="product-stat-icon orange">
             <WarningAmberOutlined />
           </div>
+
           <div>
             <span>Low Stock</span>
             <h2>{lowStockCount}</h2>
@@ -433,6 +570,7 @@ function Product() {
           <div className="product-stat-icon blue">
             <Inventory2Outlined />
           </div>
+
           <div>
             <span>Total Stock Units</span>
             <h2>{totalStock}</h2>
@@ -441,20 +579,26 @@ function Product() {
         </div>
       </div>
 
+      {/* PRODUCT CONTENT */}
+
       <section className="product-content">
         <div className="product-content-header">
           <div>
             <h2>All Products</h2>
             <p>View, add and update your product inventory.</p>
           </div>
+
           <span className="product-total-badge">
             {filteredProducts.length} products
           </span>
         </div>
 
+        {/* SEARCH AND FILTER */}
+
         <div className="product-toolbar">
           <div className="product-search">
             <Search />
+
             <input
               type="text"
               placeholder="Search product, SKU or supplier..."
@@ -470,6 +614,7 @@ function Product() {
               onChange={(event) => setCategoryFilter(event.target.value)}
             >
               <option>All Categories</option>
+
               {categories.map((category) => (
                 <option key={category}>{category}</option>
               ))}
@@ -487,6 +632,8 @@ function Product() {
           </div>
         </div>
 
+        {/* DESKTOP TABLE */}
+
         <div className="product-table-wrapper">
           <table className="product-table">
             <thead>
@@ -501,62 +648,79 @@ function Product() {
             </thead>
 
             <tbody>
-              {filteredProducts.map((product) => {
-                const stockStatus = getStockStatus(product.stock);
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan="6"
+                    style={{
+                      textAlign: "center",
+                      padding: 24,
+                    }}
+                  >
+                    Loading products...
+                  </td>
+                </tr>
+              ) : (
+                filteredProducts.map((product) => {
+                  const stockStatus = getStockStatus(product.stock);
 
-                return (
-                  <tr key={product.id}>
-                    <td>
-                      <div className="product-info-cell">
-                        {renderProductImage(product)}
-                        <div className="product-name-info">
-                          <strong>{product.name}</strong>
-                          <small>SKU: {product.sku}</small>
+                  return (
+                    <tr key={product.id}>
+                      <td>
+                        <div className="product-info-cell">
+                          {renderProductImage(product, true)}
+                          <div className="product-name-info">
+                            <strong>{product.name}</strong>
+                            <small>SKU: {product.sku}</small>
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td>
-                      <span className="product-category-label">
-                        {product.category}
-                      </span>
-                    </td>
+                      <td>
+                        <span className="product-category-label">
+                          {product.category}
+                        </span>
+                      </td>
 
-                    <td>
-                      <strong className="product-price">
-                        {formatPrice(product.price)}
-                      </strong>
-                    </td>
+                      <td>
+                        <strong className="product-price">
+                          {formatPrice(product.price)}
+                        </strong>
+                      </td>
 
-                    <td>
-                      <span
-                        className={`product-stock ${stockStatus.className}`}
-                      >
-                        {product.stock === 0
-                          ? "Out of stock"
-                          : `${product.stock} units`}
-                      </span>
-                    </td>
-
-                    <td>{product.supplier}</td>
-
-                    <td className="product-actions-cell">
-                      <Tooltip title="More options">
-                        <IconButton
-                          size="small"
-                          className="stock-more-btn"
-                          onClick={(event) => handleMenuOpen(event, product)}
-                          aria-label={`Options for ${product.name}`}
+                      <td>
+                        <span
+                          className={`product-stock ${stockStatus.className}`}
                         >
-                          <MoreVertIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </td>
-                  </tr>
-                );
-              })}
+                          {product.stock === 0
+                            ? "Out of stock"
+                            : `${product.stock} units`}
+                        </span>
+                      </td>
+
+                      <td>{product.supplier}</td>
+
+                      <td className="product-actions-cell">
+                        <Tooltip title="More options">
+                          <IconButton
+                            size="small"
+                            className="stock-more-btn"
+                            onClick={(event) => handleMenuOpen(event, product)}
+                            aria-label={`Options for ${product.name}`}
+                          >
+                            <MoreVertIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
+
+          {/* ACTION MENU */}
+
           <Menu
             anchorEl={anchorEl}
             open={menuOpen}
@@ -585,6 +749,7 @@ function Product() {
               <ListItemIcon>
                 <EditOutlined fontSize="small" />
               </ListItemIcon>
+
               <ListItemText>Edit Product</ListItemText>
             </MenuItem>
 
@@ -592,11 +757,12 @@ function Product() {
               <ListItemIcon sx={{ color: "#dc2626" }}>
                 <Delete fontSize="small" />
               </ListItemIcon>
+
               <ListItemText>Delete Product</ListItemText>
             </MenuItem>
           </Menu>
 
-          {filteredProducts.length === 0 && (
+          {!loading && filteredProducts.length === 0 && (
             <div className="product-empty">
               <Inventory2Outlined />
               <h3>No products found</h3>
@@ -604,6 +770,8 @@ function Product() {
             </div>
           )}
         </div>
+
+        {/* MOBILE PRODUCT LIST */}
 
         <div className="product-mobile-list">
           {filteredProducts.map((product) => {
@@ -617,6 +785,7 @@ function Product() {
                   <div className="product-name-info">
                     <strong>{product.name}</strong>
                     <small>SKU: {product.sku}</small>
+
                     <span className="product-category-label">
                       {product.category}
                     </span>
@@ -637,12 +806,14 @@ function Product() {
                     <span>Price</span>
                     <strong>{formatPrice(product.price)}</strong>
                   </div>
+
                   <div>
                     <span>Stock</span>
                     <strong className={stockStatus.className}>
                       {product.stock} units
                     </strong>
                   </div>
+
                   <div>
                     <span>Status</span>
                     <strong
@@ -660,7 +831,7 @@ function Product() {
             );
           })}
 
-          {filteredProducts.length === 0 && (
+          {!loading && filteredProducts.length === 0 && (
             <div className="product-empty">
               <Inventory2Outlined />
               <h3>No products found</h3>
@@ -675,6 +846,8 @@ function Product() {
         </div>
       </section>
 
+      {/* ADD / EDIT MODAL */}
+
       {showForm && (
         <div className="product-modal-overlay" onClick={closeForm}>
           <form
@@ -687,6 +860,7 @@ function Product() {
                 <h2>
                   {editingId !== null ? "Edit Product" : "Add New Product"}
                 </h2>
+
                 <p>Enter the product and inventory details below.</p>
               </div>
 
@@ -701,8 +875,11 @@ function Product() {
             </div>
 
             <div className="product-form-grid">
+              {/* PRODUCT NAME */}
+
               <div className="product-form-field full">
                 <label htmlFor="product-name">Product Name *</label>
+
                 <input
                   id="product-name"
                   name="name"
@@ -713,8 +890,11 @@ function Product() {
                 />
               </div>
 
+              {/* SKU */}
+
               <div className="product-form-field">
                 <label htmlFor="product-sku">Product Code / SKU *</label>
+
                 <input
                   id="product-sku"
                   name="sku"
@@ -725,8 +905,11 @@ function Product() {
                 />
               </div>
 
+              {/* CATEGORY */}
+
               <div className="product-form-field">
                 <label htmlFor="product-category">Category *</label>
+
                 <select
                   id="product-category"
                   name="category"
@@ -739,8 +922,11 @@ function Product() {
                 </select>
               </div>
 
+              {/* PRICE */}
+
               <div className="product-form-field">
                 <label htmlFor="product-price">Price (₹) *</label>
+
                 <input
                   id="product-price"
                   name="price"
@@ -754,8 +940,11 @@ function Product() {
                 />
               </div>
 
+              {/* STOCK */}
+
               <div className="product-form-field">
                 <label htmlFor="product-stock">Stock Quantity *</label>
+
                 <input
                   id="product-stock"
                   name="stock"
@@ -769,8 +958,11 @@ function Product() {
                 />
               </div>
 
+              {/* SUPPLIER */}
+
               <div className="product-form-field full">
                 <label htmlFor="product-supplier">Supplier Name *</label>
+
                 <input
                   id="product-supplier"
                   name="supplier"
@@ -780,6 +972,24 @@ function Product() {
                   required
                 />
               </div>
+
+              {/* STATUS */}
+
+              <div className="product-form-field">
+                <label htmlFor="product-status">Status</label>
+
+                <select
+                  id="product-status"
+                  name="status"
+                  value={form.status}
+                  onChange={handleChange}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+
+              {/* PRODUCT IMAGES */}
 
               <div className="product-form-field full">
                 <label htmlFor="product-image">Product Images</label>
@@ -795,7 +1005,14 @@ function Product() {
                 <div className="product-image-gallery">
                   {form.images.map((image, index) => (
                     <div className="product-image-preview" key={index}>
-                      <img src={image} alt={`Product preview ${index + 1}`} />
+                      <img
+                        src={getImageUrl(image)}
+                        alt={`Product preview ${index + 1}`}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = FALLBACK_IMAGE;
+                        }}
+                      />
 
                       <button
                         type="button"
@@ -814,6 +1031,8 @@ function Product() {
                   ))}
                 </div>
               </div>
+
+              {/* DESCRIPTION */}
 
               <div className="product-form-field full">
                 <label htmlFor="product-description">Product Description</label>
@@ -839,8 +1058,17 @@ function Product() {
               >
                 Cancel
               </button>
-              <button type="submit" className="product-save-btn">
-                {editingId !== null ? "Save Changes" : "Add Product"}
+
+              <button
+                type="submit"
+                className="product-save-btn"
+                disabled={saving}
+              >
+                {saving
+                  ? "Saving..."
+                  : editingId !== null
+                    ? "Save Changes"
+                    : "Add Product"}
               </button>
             </div>
           </form>
