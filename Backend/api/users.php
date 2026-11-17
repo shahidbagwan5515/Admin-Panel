@@ -2,24 +2,39 @@
 <?php
 
 header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Origin: *");
+
+$allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173"
+];
+
+$origin = $_SERVER["HTTP_ORIGIN"] ?? "";
+
+if (in_array($origin, $allowedOrigins, true)) {
+  header("Access-Control-Allow-Origin: " . $origin);
+  header("Access-Control-Allow-Credentials: true");
+}
+
+header("Vary: Origin");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
-  http_response_code(200);
+  http_response_code(204);
   exit;
 }
 
 require_once __DIR__ . "/../config/db.php";
+require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../helpers/notification_helper.php";
 
 // -------------------------------------
-// JSON RESPONSE
+// RESPONSE FUNCTION
 // -------------------------------------
 
-function sendResponse($success, $message, $data = null, $code = 200)
+function sendResponse($success, $message, $data = null, $status = 200)
 {
-  http_response_code($code);
+  http_response_code($status);
 
   echo json_encode([
     "success" => $success,
@@ -31,12 +46,47 @@ function sendResponse($success, $message, $data = null, $code = 200)
 }
 
 // -------------------------------------
-// READ JSON INPUT
+// USER NOTIFICATION FUNCTION
+// -------------------------------------
+
+function userNotification($conn, $user, $action, $title, $message, $id)
+{
+  try {
+
+    if (
+      !$user ||
+      empty($user["email"])
+    ) {
+      error_log("User notification: Admin email not found.");
+      return false;
+    }
+
+    return createNotification(
+      $conn,
+      "Users",
+      $action,
+      $title,
+      $message,
+      $id,
+      $user["name"] ?? "Admin",
+      $user["email"]
+    );
+  } catch (Throwable $e) {
+
+    error_log("User Notification Error: " . $e->getMessage());
+    return false;
+  }
+}
+
+// -------------------------------------
+// GET JSON INPUT
 // -------------------------------------
 
 function getInput()
 {
-  $input = json_decode(file_get_contents("php://input"), true);
+  $raw = file_get_contents("php://input");
+
+  $input = json_decode($raw, true);
 
   if (!is_array($input)) {
     sendResponse(false, "Invalid JSON request.", null, 400);
@@ -104,7 +154,6 @@ function validatePermissions($permissions)
 
 // -------------------------------------
 // FORMAT USER
-// Password is never returned
 // -------------------------------------
 
 function formatUser($row)
@@ -116,7 +165,7 @@ function formatUser($row)
   }
 
   return [
-    "id" => (int) $row["id"],
+    "id" => (int)$row["id"],
     "name" => $row["name"],
     "email" => $row["email"],
     "role" => $row["role"],
@@ -130,14 +179,18 @@ $method = $_SERVER["REQUEST_METHOD"];
 try {
 
   // =====================================
-  // GET: FETCH USERS
+  // GET USERS
   // =====================================
 
   if ($method === "GET") {
 
-    $sql = "SELECT id, name, email, role, status, permissions
-                FROM users
-                ORDER BY id DESC";
+    $user = requireLogin();
+
+    $sql = "
+            SELECT id, name, email, role, status, permissions
+            FROM users
+            ORDER BY id DESC
+        ";
 
     $result = $conn->query($sql);
 
@@ -155,10 +208,16 @@ try {
   }
 
   // =====================================
+  // LOGIN REQUIRED FOR WRITE OPERATIONS
+  // =====================================
+
+  $user = requireLogin();
+
+  // =====================================
   // POST: CREATE USER
   // =====================================
 
-  elseif ($method === "POST") {
+  if ($method === "POST") {
 
     $input = getInput();
 
@@ -176,12 +235,7 @@ try {
       sendResponse(false, "Invalid password.", null, 400);
     }
 
-    if (
-      $name === "" ||
-      $email === "" ||
-      $role === "" ||
-      $password === ""
-    ) {
+    if ($name === "" || $email === "" || $role === "" || $password === "") {
       sendResponse(
         false,
         "Name, email, password and role are required.",
@@ -216,6 +270,8 @@ try {
     $check->execute();
 
     if ($check->get_result()->num_rows > 0) {
+      $check->close();
+
       sendResponse(
         false,
         "This email is already registered.",
@@ -224,14 +280,19 @@ try {
       );
     }
 
+    $check->close();
+
     $permissionsJson = json_encode($permissions);
 
-    // Direct password storage - no hashing
-    $stmt = $conn->prepare(
-      "INSERT INTO users
+    $stmt = $conn->prepare("
+            INSERT INTO users
             (name, email, password, role, status, permissions)
-            VALUES (?, ?, ?, ?, ?, ?)"
-    );
+            VALUES (?, ?, ?, ?, ?, ?)
+        ");
+
+    if (!$stmt) {
+      sendResponse(false, "Database error.", null, 500);
+    }
 
     $stmt->bind_param(
       "ssssss",
@@ -244,10 +305,22 @@ try {
     );
 
     if (!$stmt->execute()) {
+      $stmt->close();
       sendResponse(false, "Unable to create user.", null, 500);
     }
 
-    $userId = $conn->insert_id;
+    $userId = (int)$conn->insert_id;
+    $stmt->close();
+
+    // CREATE NOTIFICATION
+    $notificationSent = userNotification(
+      $conn,
+      $user,
+      "Created",
+      "New User Added",
+      "New user '{$name}' ({$email}) has been created successfully. Role: {$role}.",
+      $userId
+    );
 
     sendResponse(true, "User created successfully.", [
       "id" => $userId,
@@ -255,7 +328,8 @@ try {
       "email" => $email,
       "role" => $role,
       "status" => $status,
-      "permissions" => $permissions
+      "permissions" => $permissions,
+      "notification_created" => $notificationSent
     ], 201);
   }
 
@@ -267,23 +341,23 @@ try {
 
     $input = getInput();
 
-    $id = (int) ($input["id"] ?? 0);
+    $id = (int)($input["id"] ?? 0);
 
     if ($id <= 0) {
       sendResponse(false, "Valid user ID is required.", null, 400);
     }
 
-    // Get existing user
-    $check = $conn->prepare(
-      "SELECT id, name, email, role, status, permissions
-             FROM users
-             WHERE id = ?"
-    );
+    $check = $conn->prepare("
+            SELECT id, name, email, role, status, permissions
+            FROM users
+            WHERE id = ?
+        ");
 
     $check->bind_param("i", $id);
     $check->execute();
 
     $existing = $check->get_result()->fetch_assoc();
+    $check->close();
 
     if (!$existing) {
       sendResponse(false, "User not found.", null, 404);
@@ -311,15 +385,18 @@ try {
       sendResponse(false, "Invalid status.", null, 400);
     }
 
-    // Check duplicate email
-    $checkEmail = $conn->prepare(
-      "SELECT id FROM users WHERE email = ? AND id != ?"
-    );
+    // Duplicate email check
+    $checkEmail = $conn->prepare("
+            SELECT id FROM users
+            WHERE email = ? AND id != ?
+        ");
 
     $checkEmail->bind_param("si", $email, $id);
     $checkEmail->execute();
 
     if ($checkEmail->get_result()->num_rows > 0) {
+      $checkEmail->close();
+
       sendResponse(
         false,
         "This email is already registered.",
@@ -328,14 +405,12 @@ try {
       );
     }
 
+    $checkEmail->close();
+
     // Permissions
     if (array_key_exists("permissions", $input)) {
-
-      $permissions = validatePermissions(
-        $input["permissions"]
-      );
+      $permissions = validatePermissions($input["permissions"]);
     } else {
-
       $permissions = json_decode(
         $existing["permissions"] ?? "[]",
         true
@@ -348,7 +423,6 @@ try {
 
     $permissionsJson = json_encode($permissions);
 
-    // Optional password update
     $newPassword = $input["password"] ?? "";
 
     if (!is_string($newPassword)) {
@@ -366,17 +440,16 @@ try {
         );
       }
 
-      // Direct password update - no hashing
-      $stmt = $conn->prepare(
-        "UPDATE users
-                 SET name = ?,
-                     email = ?,
-                     password = ?,
-                     role = ?,
-                     status = ?,
-                     permissions = ?
-                 WHERE id = ?"
-      );
+      $stmt = $conn->prepare("
+                UPDATE users
+                SET name = ?,
+                    email = ?,
+                    password = ?,
+                    role = ?,
+                    status = ?,
+                    permissions = ?
+                WHERE id = ?
+            ");
 
       $stmt->bind_param(
         "ssssssi",
@@ -390,16 +463,15 @@ try {
       );
     } else {
 
-      // Keep existing password unchanged
-      $stmt = $conn->prepare(
-        "UPDATE users
-                 SET name = ?,
-                     email = ?,
-                     role = ?,
-                     status = ?,
-                     permissions = ?
-                 WHERE id = ?"
-      );
+      $stmt = $conn->prepare("
+                UPDATE users
+                SET name = ?,
+                    email = ?,
+                    role = ?,
+                    status = ?,
+                    permissions = ?
+                WHERE id = ?
+            ");
 
       $stmt->bind_param(
         "sssssi",
@@ -413,8 +485,53 @@ try {
     }
 
     if (!$stmt->execute()) {
+      $stmt->close();
       sendResponse(false, "Unable to update user.", null, 500);
     }
+
+    $stmt->close();
+
+    // Detect permission-only update
+    $oldPermissions = json_decode(
+      $existing["permissions"] ?? "[]",
+      true
+    );
+
+    if (!is_array($oldPermissions)) {
+      $oldPermissions = [];
+    }
+
+    $permissionsChanged = (
+      json_encode($oldPermissions) !== json_encode($permissions)
+    );
+
+    $profileChanged = (
+      $existing["name"] !== $name ||
+      $existing["email"] !== $email ||
+      $existing["role"] !== $role ||
+      $existing["status"] !== $status ||
+      $newPassword !== ""
+    );
+
+    if ($permissionsChanged && !$profileChanged) {
+      $action = "Permissions Updated";
+      $title = "User Permissions Updated";
+      $message = "Permissions for '{$name}' ({$email}) have been updated.";
+    } else {
+      $action = "Updated";
+      $title = "User Updated";
+      $message = "User '{$name}' ({$email}) has been updated successfully. Role: {$role}.";
+    }
+
+    // UPDATE NOTIFICATION
+    $notificationSent = userNotification(
+      $conn,
+      $user,
+      $action,
+      $title,
+      $message,
+      $id
+    );
 
     sendResponse(true, "User updated successfully.", [
       "id" => $id,
@@ -422,7 +539,8 @@ try {
       "email" => $email,
       "role" => $role,
       "status" => $status,
-      "permissions" => $permissions
+      "permissions" => $permissions,
+      "notification_created" => $notificationSent
     ]);
   }
 
@@ -432,44 +550,67 @@ try {
 
   elseif ($method === "DELETE") {
 
-    $id = (int) ($_GET["id"] ?? 0);
+    $id = (int)($_GET["id"] ?? 0);
 
     if ($id <= 0) {
       sendResponse(false, "Valid user ID is required.", null, 400);
     }
 
-    $check = $conn->prepare(
-      "SELECT id FROM users WHERE id = ?"
-    );
+    $check = $conn->prepare("
+            SELECT id, name, email
+            FROM users
+            WHERE id = ?
+        ");
 
     $check->bind_param("i", $id);
     $check->execute();
 
-    if ($check->get_result()->num_rows === 0) {
+    $deletedUser = $check->get_result()->fetch_assoc();
+    $check->close();
+
+    if (!$deletedUser) {
       sendResponse(false, "User not found.", null, 404);
     }
 
-    $stmt = $conn->prepare(
-      "DELETE FROM users WHERE id = ?"
-    );
+    $stmt = $conn->prepare("
+            DELETE FROM users WHERE id = ?
+        ");
 
     $stmt->bind_param("i", $id);
 
     if (!$stmt->execute()) {
+      $stmt->close();
       sendResponse(false, "Unable to delete user.", null, 500);
     }
 
-    sendResponse(true, "User deleted successfully.");
-  }
+    $stmt->close();
 
-  // =====================================
-  // INVALID METHOD
-  // =====================================
+    // DELETE NOTIFICATION
+    $notificationSent = userNotification(
+      $conn,
+      $user,
+      "Deleted",
+      "User Deleted",
+      "User '{$deletedUser["name"]}' ({$deletedUser["email"]}) has been deleted successfully.",
+      $id
+    );
 
-  else {
-
+    sendResponse(true, "User deleted successfully.", [
+      "id" => $id,
+      "notification_created" => $notificationSent
+    ]);
+  } else {
     sendResponse(false, "Method not allowed.", null, 405);
   }
+} catch (mysqli_sql_exception $error) {
+
+  error_log("User SQL Error: " . $error->getMessage());
+
+  if ((int)$error->getCode() === 1062) {
+    sendResponse(false, "This email is already registered.", null, 409);
+  }
+
+  sendResponse(false, "Database operation failed.", null, 500);
 } catch (Throwable $error) {
 
   error_log("User API Error: " . $error->getMessage());

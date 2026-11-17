@@ -78,7 +78,7 @@ function Stock() {
     try {
       setLoading(true);
 
-      const response = await fetch(STOCK_API);
+      const response = await fetch(STOCK_API, { credentials: "include" });
       const result = await response.json();
 
       if (result.success) {
@@ -109,7 +109,7 @@ function Stock() {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch(CATEGORY_API);
+      const response = await fetch(CATEGORY_API, { credentials: "include" });
       const result = await response.json();
 
       console.log("Category API Response:", result);
@@ -216,6 +216,7 @@ function Stock() {
 
       const response = await fetch(STOCK_API, {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
 
@@ -344,6 +345,7 @@ function Stock() {
 
       const response = await fetch(`${STOCK_API}?id=${id}`, {
         method: "DELETE",
+        credentials: "include",
       });
 
       const result = await response.json();
@@ -777,8 +779,13 @@ function Stock() {
                 editingId !== null ? <EditOutlinedIcon /> : <AddIcon />
               }
               className="stock-save-btn"
+              disabled={loading}
             >
-              {editingId !== null ? "Save Changes" : "Add Stock"}
+              {loading
+                ? "Saving..."
+                : editingId !== null
+                  ? "Save Changes"
+                  : "Add Stock"}
             </Button>
           </DialogActions>
         </Box>

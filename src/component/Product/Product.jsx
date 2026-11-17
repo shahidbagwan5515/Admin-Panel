@@ -23,11 +23,13 @@ import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 const API_URL =
   "http://localhost/Admin-Panel/dashboard/Backend/api/product.php";
 
+const CATEGORY_API =
+  "http://localhost/Admin-Panel/dashboard/Backend/api/categories.php";
+
 const FALLBACK_IMAGE =
   "https://placehold.co/300x300/f3f4f6/64748b?text=No+Image";
 
-const CATEGORY_API =
-  "http://localhost/Admin-Panel/dashboard/Backend/api/categories.php";
+const BACKEND_URL = "http://localhost/Admin-Panel/dashboard/Backend/";
 
 const emptyForm = {
   name: "",
@@ -41,10 +43,97 @@ const emptyForm = {
   status: "Active",
 };
 
+// ======================================================
+// API HELPER
+// ======================================================
+
+const apiRequest = async (url, options = {}) => {
+  const response = await fetch(url, {
+    ...options,
+    credentials: "include",
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
+  });
+
+  const responseText = await response.text();
+
+  let result;
+
+  try {
+    result = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    throw new Error(
+      `Invalid server response. HTTP ${response.status}. Check PHP errors in XAMPP.`,
+    );
+  }
+
+  if (!response.ok || result.success === false) {
+    throw new Error(
+      result.message || `Request failed. HTTP status: ${response.status}`,
+    );
+  }
+
+  return result;
+};
+
+// ======================================================
+// IMAGE HELPERS
+// ======================================================
+
+const getImageUrl = (image) => {
+  if (!image || typeof image !== "string") {
+    return FALLBACK_IMAGE;
+  }
+
+  const cleanImage = image.trim();
+
+  if (
+    cleanImage.startsWith("data:image/") ||
+    cleanImage.startsWith("http://") ||
+    cleanImage.startsWith("https://")
+  ) {
+    return cleanImage;
+  }
+
+  if (cleanImage.startsWith("/")) {
+    return `http://localhost${cleanImage}`;
+  }
+
+  return `${BACKEND_URL}${cleanImage.replace(/^\.?\//, "")}`;
+};
+
+const normalizeImages = (images) => {
+  if (!images) return [];
+
+  if (typeof images === "string") {
+    try {
+      images = JSON.parse(images);
+    } catch {
+      images = [images];
+    }
+  }
+
+  if (!Array.isArray(images)) {
+    images = [];
+  }
+
+  return images.filter(
+    (image) => typeof image === "string" && image.trim() !== "",
+  );
+};
+
+// ======================================================
+// PRODUCT COMPONENT
+// ======================================================
+
 function Product() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
 
@@ -60,56 +149,72 @@ function Product() {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedStock, setSelectedStock] = useState(null);
 
-  // ==============================
-  // FETCH PRODUCTS API
-  // ==============================
+  // ====================================================
+  // FETCH PRODUCTS
+  // ====================================================
 
   const fetchProducts = async () => {
     try {
       setLoading(true);
 
-      const response = await fetch(API_URL);
-      const result = await response.json();
+      const result = await apiRequest(API_URL, {
+        method: "GET",
+      });
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Unable to fetch products.");
-      }
+      const productData = Array.isArray(result.data)
+        ? result.data
+        : result.data?.products || [];
 
-      setProducts(Array.isArray(result.data) ? result.data : []);
+      setProducts(
+        productData.map((product) => ({
+          ...product,
+          id: Number(product.id),
+          stock: Number(product.stock || 0),
+          price: Number(product.price || 0),
+          images: normalizeImages(product.images),
+        })),
+      );
+
+      return true;
     } catch (err) {
-      setError(err.message || "Server se products load nahi hue.");
+      console.error("Product Fetch Error:", err);
+      setError(err.message || "Unable to load products.");
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
-  // ==============================
-  // FETCH Category API
-  // ==============================
+  // ====================================================
+  // FETCH CATEGORIES
+  // ====================================================
 
   const fetchCategories = async () => {
     try {
       setCategoriesLoading(true);
 
-      const response = await fetch(CATEGORY_API);
-      const result = await response.json();
+      const result = await apiRequest(CATEGORY_API, {
+        method: "GET",
+      });
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Unable to fetch categories.");
-      }
+      const categoryData = Array.isArray(result.data)
+        ? result.data
+        : result.data?.categories || [];
 
-      const formattedCategories = (result.data || [])
-        .filter(
-          (item) =>
-            String(item.status ?? item.STATUS ?? "active").toLowerCase() ===
-            "active",
-        )
+      const activeCategories = categoryData
+        .filter((item) => {
+          const status = String(
+            item.status ?? item.STATUS ?? "active",
+          ).toLowerCase();
+
+          return status === "active" || status === "1";
+        })
         .map((item) => item.name ?? item.NAME ?? "")
         .filter(Boolean);
 
-      setCategories(formattedCategories);
-    } catch (error) {
-      console.error("Category Fetch Error:", error);
+      setCategories([...new Set(activeCategories)]);
+    } catch (err) {
+      console.error("Category Fetch Error:", err);
     } finally {
       setCategoriesLoading(false);
     }
@@ -119,15 +224,16 @@ function Product() {
     fetchProducts();
     fetchCategories();
   }, []);
-  // ==============================
+
+  // ====================================================
   // MENU HANDLERS
-  // ==============================
+  // ====================================================
 
   const menuOpen = Boolean(anchorEl);
 
-  const handleMenuOpen = (event, stock) => {
+  const handleMenuOpen = (event, product) => {
     setAnchorEl(event.currentTarget);
-    setSelectedStock(stock);
+    setSelectedStock(product);
   };
 
   const handleMenuClose = () => {
@@ -137,7 +243,6 @@ function Product() {
 
   const handleMenuEdit = () => {
     const product = selectedStock;
-
     handleMenuClose();
 
     if (product) {
@@ -147,7 +252,6 @@ function Product() {
 
   const handleMenuDelete = () => {
     const productId = selectedStock?.id;
-
     handleMenuClose();
 
     if (productId != null) {
@@ -155,9 +259,9 @@ function Product() {
     }
   };
 
-  // ==============================
+  // ====================================================
   // SEARCH AND FILTER
-  // ==============================
+  // ====================================================
 
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -185,16 +289,16 @@ function Product() {
     });
   }, [products, search, categoryFilter, statusFilter]);
 
-  // ==============================
+  // ====================================================
   // DASHBOARD STATISTICS
-  // ==============================
+  // ====================================================
 
   const activeCount = products.filter(
     (product) => product.status === "Active",
   ).length;
 
   const lowStockCount = products.filter(
-    (product) => product.stock > 0 && product.stock <= 10,
+    (product) => Number(product.stock) > 0 && Number(product.stock) <= 10,
   ).length;
 
   const totalStock = products.reduce(
@@ -209,9 +313,9 @@ function Product() {
       maximumFractionDigits: 2,
     }).format(Number(price) || 0);
 
-  // ==============================
-  // ADD PRODUCT FORM
-  // ==============================
+  // ====================================================
+  // OPEN ADD FORM
+  // ====================================================
 
   const openAddForm = () => {
     setEditingId(null);
@@ -220,39 +324,21 @@ function Product() {
     setShowForm(true);
   };
 
-  // ==============================
-  // EDIT PRODUCT FORM
-  // ==============================
+  // ====================================================
+  // OPEN EDIT FORM
+  // ====================================================
 
   const openEditForm = (product) => {
     setEditingId(product.id);
 
     setForm({
-      name: product.name,
-      sku: product.sku,
-      category: product.category,
-      stock: String(product.stock),
-      price: String(product.price),
+      name: product.name || "",
+      sku: product.sku || "",
+      category: product.category || "",
+      stock: String(product.stock ?? ""),
+      price: String(product.price ?? ""),
       supplier: product.supplier || "",
-      images: (() => {
-        let images = product.images || [];
-
-        if (typeof images === "string") {
-          try {
-            images = JSON.parse(images);
-          } catch {
-            images = [images];
-          }
-        }
-
-        if (!Array.isArray(images)) {
-          images = [];
-        }
-
-        return images.filter(
-          (image) => typeof image === "string" && image.trim() !== "",
-        );
-      })(),
+      images: normalizeImages(product.images),
       description: product.description || "",
       status: product.status || "Active",
     });
@@ -261,39 +347,22 @@ function Product() {
     setShowForm(true);
   };
 
-  const getImageUrl = (image) => {
-    if (!image || typeof image !== "string") {
-      return FALLBACK_IMAGE;
-    }
-
-    if (
-      image.startsWith("data:image/") ||
-      image.startsWith("http://") ||
-      image.startsWith("https://")
-    ) {
-      return image;
-    }
-
-    if (image.startsWith("/")) {
-      return `http://localhost${image}`;
-    }
-
-    return `http://localhost/Admin-Panel/dashboard/Backend/${image}`;
-  };
-  // ==============================
+  // ====================================================
   // CLOSE FORM
-  // ==============================
+  // ====================================================
 
   const closeForm = () => {
+    if (saving) return;
+
     setShowForm(false);
     setEditingId(null);
     setForm({ ...emptyForm });
     setError("");
   };
 
-  // ==============================
-  // HANDLE INPUT CHANGE
-  // ==============================
+  // ====================================================
+  // INPUT CHANGE
+  // ====================================================
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -306,64 +375,94 @@ function Product() {
     setError("");
   };
 
-  // ==============================
+  // ====================================================
   // IMAGE UPLOAD
-  // ==============================
+  // ====================================================
 
-  const handleImageChange = (event) => {
+  const handleImageChange = async (event) => {
     const files = Array.from(event.target.files || []);
     const maxSize = 5 * 1024 * 1024;
 
-    const validImages = files.filter((file) => {
+    if (form.images.length + files.length > 6) {
+      setError("Maximum 6 images are allowed.");
+      event.target.value = "";
+      return;
+    }
+
+    const validImages = [];
+
+    for (const file of files) {
       if (!file.type.startsWith("image/")) {
-        setError("Please select valid image files.");
-        return false;
+        setError(`${file.name} is not a valid image.`);
+        continue;
+      }
+
+      const allowedTypes = [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/webp",
+      ];
+
+      if (!allowedTypes.includes(file.type)) {
+        setError("Only JPG, JPEG, PNG and WEBP images are allowed.");
+        continue;
       }
 
       if (file.size > maxSize) {
         setError(`${file.name} must be less than 5 MB.`);
-        return false;
+        continue;
       }
 
-      return true;
-    });
+      validImages.push(file);
+    }
 
-    Promise.all(
-      validImages.map(
-        (file) =>
-          new Promise((resolve, reject) => {
-            const reader = new FileReader();
+    try {
+      const newImages = await Promise.all(
+        validImages.map(
+          (file) =>
+            new Promise((resolve, reject) => {
+              const reader = new FileReader();
 
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = () => reject(new Error("Image reading failed."));
 
-            reader.readAsDataURL(file);
-          }),
-      ),
-    )
-      .then((newImages) => {
-        setForm((previous) => {
-          const remainingSlots = Math.max(0, 6 - previous.images.length);
+              reader.readAsDataURL(file);
+            }),
+        ),
+      );
 
-          return {
-            ...previous,
-            images: [...previous.images, ...newImages.slice(0, remainingSlots)],
-          };
-        });
-      })
-      .catch(() => {
-        setError("Unable to read selected images.");
-      });
+      setForm((previous) => ({
+        ...previous,
+        images: [...previous.images, ...newImages].slice(0, 6),
+      }));
+
+      if (newImages.length > 0) {
+        setError("");
+      }
+    } catch (err) {
+      setError(err.message || "Unable to read selected images.");
+    }
 
     event.target.value = "";
   };
-  // ==============================
-  // ADD / UPDATE PRODUCT API
-  // ==============================
 
-  const saveProduct = async (event) => {
-    event.preventDefault();
+  // ====================================================
+  // REMOVE IMAGE
+  // ====================================================
 
+  const removeImage = (index) => {
+    setForm((previous) => ({
+      ...previous,
+      images: previous.images.filter((_, imageIndex) => imageIndex !== index),
+    }));
+  };
+
+  // ====================================================
+  // VALIDATE PRODUCT
+  // ====================================================
+
+  const validateProduct = () => {
     const name = form.name.trim();
     const sku = form.sku.trim();
     const supplier = form.supplier.trim();
@@ -372,8 +471,7 @@ function Product() {
     const price = Number(form.price);
 
     if (!name || !sku || !supplier || !form.category) {
-      setError("Please fill in all required fields.");
-      return;
+      return "Please fill in all required fields.";
     }
 
     if (
@@ -382,29 +480,43 @@ function Product() {
       stock < 0 ||
       !Number.isInteger(stock)
     ) {
-      setError("Stock must be a non-negative whole number.");
-      return;
+      return "Stock must be a non-negative whole number.";
     }
 
     if (form.price === "" || !Number.isFinite(price) || price < 0) {
-      setError("Please enter a valid price.");
-      return;
+      return "Please enter a valid price.";
     }
 
     if (form.images.length > 6) {
-      setError("Maximum 6 images are allowed.");
+      return "Maximum 6 images are allowed.";
+    }
+
+    return "";
+  };
+
+  // ====================================================
+  // ADD / UPDATE PRODUCT
+  // ====================================================
+
+  const saveProduct = async (event) => {
+    event.preventDefault();
+
+    const validationError = validateProduct();
+
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     const payload = {
-      name,
-      sku,
+      name: form.name.trim(),
+      sku: form.sku.trim(),
       category: form.category,
-      stock,
-      price,
-      supplier,
+      stock: Number(form.stock),
+      price: Number(form.price),
+      supplier: form.supplier.trim(),
       images: form.images,
-      description: form.description,
+      description: form.description.trim(),
       status: form.status || "Active",
     };
 
@@ -414,76 +526,86 @@ function Product() {
 
       const isEditing = editingId !== null;
 
-      const response = await fetch(
-        isEditing ? `${API_URL}?id=${editingId}` : API_URL,
-        {
-          method: isEditing ? "PUT" : "POST",
+      const url = isEditing
+        ? `${API_URL}?id=${encodeURIComponent(editingId)}`
+        : API_URL;
 
-          headers: {
-            "Content-Type": "application/json",
-          },
+      const result = await apiRequest(url, {
+        method: isEditing ? "PUT" : "POST",
+        body: JSON.stringify(payload),
+      });
 
-          body: JSON.stringify(payload),
-        },
+      window.alert(
+        result.message ||
+          (isEditing
+            ? "Product updated successfully."
+            : "Product added successfully."),
       );
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Product save nahi hua.");
-      }
-
+      // Reload product list after successful save.
       await fetchProducts();
 
-      closeForm();
+      setShowForm(false);
+      setEditingId(null);
+      setForm({ ...emptyForm });
+      setError("");
     } catch (err) {
-      setError(err.message || "Unable to save product. Please try again.");
+      console.error("Product Save Error:", err);
+      setError(err.message || "Unable to save product.");
     } finally {
       setSaving(false);
     }
   };
 
-  // ==============================
-  // DELETE PRODUCT API
-  // ==============================
+  // ====================================================
+  // DELETE PRODUCT
+  // ====================================================
 
   const deleteProduct = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this product?")) {
-      return;
-    }
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this product?",
+    );
+
+    if (!confirmed) return;
 
     try {
-      const response = await fetch(`${API_URL}?id=${id}`, {
-        method: "DELETE",
-      });
+      setDeleting(true);
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Product delete nahi hua.");
-      }
+      const result = await apiRequest(
+        `${API_URL}?id=${encodeURIComponent(id)}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       setProducts((previous) =>
         previous.filter((product) => Number(product.id) !== Number(id)),
       );
+
+      window.alert(result.message || "Product deleted successfully.");
     } catch (err) {
+      console.error("Product Delete Error:", err);
       window.alert(err.message || "Unable to delete product.");
+    } finally {
+      setDeleting(false);
     }
   };
 
-  // ==============================
+  // ====================================================
   // STOCK STATUS
-  // ==============================
+  // ====================================================
 
   const getStockStatus = (stock) => {
-    if (Number(stock) === 0) {
+    const quantity = Number(stock);
+
+    if (quantity === 0) {
       return {
         label: "Out of Stock",
         className: "out",
       };
     }
 
-    if (Number(stock) <= 10) {
+    if (quantity <= 10) {
       return {
         label: "Low Stock",
         className: "low",
@@ -496,57 +618,52 @@ function Product() {
     };
   };
 
-  // ==============================
+  // ====================================================
   // PRODUCT IMAGE
-  // ==============================
+  // ====================================================
 
   const renderProductImage = (product, large = false) => {
-    let firstImage = FALLBACK_IMAGE;
+    const images = normalizeImages(product.images);
 
-    if (Array.isArray(product.images) && product.images.length > 0) {
-      firstImage = product.images[0];
-    } else if (typeof product.images === "string") {
-      try {
-        const parsedImages = JSON.parse(product.images);
+    let firstImage = images[0] || product.image || "";
 
-        if (Array.isArray(parsedImages) && parsedImages.length > 0) {
-          firstImage = parsedImages[0];
-        } else {
-          firstImage = product.images;
-        }
-      } catch {
-        firstImage = product.images || FALLBACK_IMAGE;
-      }
-    } else if (product.image) {
-      firstImage = product.image;
+    if (!firstImage) {
+      firstImage = FALLBACK_IMAGE;
     }
 
     return (
       <div className={`product-thumbnail ${large ? "large" : ""}`}>
         <img
-          src={getImageUrl(firstImage)}
-          alt={product.name}
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = FALLBACK_IMAGE;
+          src={
+            firstImage === FALLBACK_IMAGE
+              ? FALLBACK_IMAGE
+              : getImageUrl(firstImage)
+          }
+          alt={product.name || "Product"}
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = FALLBACK_IMAGE;
           }}
         />
       </div>
     );
   };
-  // ==============================
+
+  // ====================================================
   // UI
-  // ==============================
+  // ====================================================
 
   return (
     <div className="product-page">
+      {/* PAGE HEADER */}
+
       <div className="product-page-header">
         <div>
           <h1>Products</h1>
           <p>Manage your Ayurvedic products, pricing and stock levels.</p>
         </div>
 
-        <button className="product-add-btn" onClick={openAddForm}>
+        <button className="product-add-btn" onClick={openAddForm} type="button">
           <Add />
           <span>Add Product</span>
         </button>
@@ -638,10 +755,12 @@ function Product() {
               value={categoryFilter}
               onChange={(event) => setCategoryFilter(event.target.value)}
             >
-              <option>All Categories</option>
+              <option value="All Categories">All Categories</option>
 
               {categories.map((category) => (
-                <option key={category}>{category}</option>
+                <option key={category} value={category}>
+                  {category}
+                </option>
               ))}
             </select>
 
@@ -650,9 +769,9 @@ function Product() {
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
             >
-              <option>All Status</option>
-              <option>Active</option>
-              <option>Inactive</option>
+              <option value="All Status">All Status</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
             </select>
           </div>
         </div>
@@ -694,6 +813,7 @@ function Product() {
                       <td>
                         <div className="product-info-cell">
                           {renderProductImage(product, true)}
+
                           <div className="product-name-info">
                             <strong>{product.name}</strong>
                             <small>SKU: {product.sku}</small>
@@ -717,7 +837,7 @@ function Product() {
                         <span
                           className={`product-stock ${stockStatus.className}`}
                         >
-                          {product.stock === 0
+                          {Number(product.stock) === 0
                             ? "Out of stock"
                             : `${product.stock} units`}
                         </span>
@@ -778,12 +898,18 @@ function Product() {
               <ListItemText>Edit Product</ListItemText>
             </MenuItem>
 
-            <MenuItem onClick={handleMenuDelete} sx={{ color: "#dc2626" }}>
+            <MenuItem
+              onClick={handleMenuDelete}
+              sx={{ color: "#dc2626" }}
+              disabled={deleting}
+            >
               <ListItemIcon sx={{ color: "#dc2626" }}>
                 <Delete fontSize="small" />
               </ListItemIcon>
 
-              <ListItemText>Delete Product</ListItemText>
+              <ListItemText>
+                {deleting ? "Deleting..." : "Delete Product"}
+              </ListItemText>
             </MenuItem>
           </Menu>
 
@@ -894,6 +1020,7 @@ function Product() {
                 className="product-modal-close"
                 onClick={closeForm}
                 aria-label="Close form"
+                disabled={saving}
               >
                 <Close />
               </button>
@@ -1031,39 +1158,40 @@ function Product() {
               {/* PRODUCT IMAGES */}
 
               <div className="product-form-field full">
-                <label htmlFor="product-image">Product Images</label>
+                <label htmlFor="product-image">
+                  Product Images (Maximum 6)
+                </label>
 
                 <input
                   id="product-image"
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   multiple
                   onChange={handleImageChange}
+                  disabled={form.images.length >= 6}
                 />
+
+                <small>
+                  {form.images.length} / 6 images selected. Maximum 5 MB per
+                  image.
+                </small>
 
                 <div className="product-image-gallery">
                   {form.images.map((image, index) => (
-                    <div className="product-image-preview" key={index}>
+                    <div
+                      className="product-image-preview"
+                      key={`${index}-${image.slice(0, 30)}`}
+                    >
                       <img
                         src={getImageUrl(image)}
                         alt={`Product preview ${index + 1}`}
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = FALLBACK_IMAGE;
+                        onError={(event) => {
+                          event.currentTarget.onerror = null;
+                          event.currentTarget.src = FALLBACK_IMAGE;
                         }}
                       />
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setForm((previous) => ({
-                            ...previous,
-                            images: previous.images.filter(
-                              (_, imageIndex) => imageIndex !== index,
-                            ),
-                          }))
-                        }
-                      >
+                      <button type="button" onClick={() => removeImage(index)}>
                         Remove
                       </button>
                     </div>
@@ -1094,6 +1222,7 @@ function Product() {
                 type="button"
                 className="product-cancel-btn"
                 onClick={closeForm}
+                disabled={saving}
               >
                 Cancel
               </button>

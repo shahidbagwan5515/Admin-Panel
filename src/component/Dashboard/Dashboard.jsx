@@ -1,13 +1,12 @@
 import "./Dashboard.css";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
+
 import {
-  Dashboard as DashboardIcon,
   ShoppingBag,
   CurrencyRupee,
   People,
   TrendingUp,
-  TrendingDown,
   MoreHoriz,
   ArrowForward,
   Inventory2,
@@ -15,199 +14,351 @@ import {
   CheckCircle,
   PendingActions,
   CalendarMonth,
+  Refresh,
+  // ErrorOutline,
 } from "@mui/icons-material";
 
-const salesData = [
-  { day: "Mon", value: 45 },
-  { day: "Tue", value: 65 },
-  { day: "Wed", value: 50 },
-  { day: "Thu", value: 82 },
-  { day: "Fri", value: 60 },
-  { day: "Sat", value: 92 },
-  { day: "Sun", value: 72 },
-];
+// =====================================
+// API URL
+// =====================================
+const API_URL =
+  "http://localhost/Admin-Panel/Dashboard/Backend/api/dashboard.php";
+// =====================================
+// FORMAT CURRENCY
+// =====================================
 
-const initialOrders = [
-  {
-    id: "#ORD-1025",
-    customer: "Rahul Sharma",
-    product: "Vibha Sandal Cream",
-    date: "23 Oct 2026",
-    amount: 320,
-    status: "Delivered",
-  },
-  {
-    id: "#ORD-1024",
-    customer: "Priya Patel",
-    product: "Nimbapatradi Churnam",
-    date: "23 Oct 2026",
-    amount: 450,
-    status: "Processing",
-  },
-  {
-    id: "#ORD-1023",
-    customer: "Amit Verma",
-    product: "Handmade Soap",
-    date: "22 Oct 2026",
-    amount: 198,
-    status: "Pending",
-  },
-  {
-    id: "#ORD-1022",
-    customer: "Sneha Joshi",
-    product: "Vibha Hair Care Cream",
-    date: "22 Oct 2026",
-    amount: 500,
-    status: "Delivered",
-  },
-];
+const formatCurrency = (amount) => {
+  return Number(amount || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  });
+};
+
+// =====================================
+// DASHBOARD COMPONENT
+// =====================================
 
 function Dashboard() {
   const [period, setPeriod] = useState("This Week");
 
+  const [dashboardData, setDashboardData] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [error, setError] = useState("");
+
+  // =====================================
+  // FETCH DASHBOARD DATA
+  // =====================================
+
+  const fetchDashboard = useCallback(
+    async (showLoader = true) => {
+      try {
+        if (showLoader) {
+          setLoading(true);
+        }
+
+        setError("");
+
+        const selectedPeriod = period === "This Month" ? "month" : "week";
+
+        const response = await fetch(`${API_URL}?period=${selectedPeriod}`);
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || "Unable to load dashboard data");
+        }
+
+        setDashboardData(result);
+      } catch (err) {
+        console.error("Dashboard API Error:", err);
+
+        setError(err.message || "Something went wrong");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [period],
+  );
+
+  // =====================================
+  // LOAD DATA
+  // =====================================
+
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
+
+  // =====================================
+  // REFRESH
+  // =====================================
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+
+    fetchDashboard(false);
+  };
+
+  // =====================================
+  // DATA VARIABLES
+  // =====================================
+
+  const statsData = dashboardData?.stats || {};
+
+  const salesData = dashboardData?.sales || [];
+
+  const summary = dashboardData?.orderSummary || {};
+
+  const recentOrders = dashboardData?.recentOrders || [];
+
+  // =====================================
+  // STATISTICS CARDS
+  // =====================================
+
   const stats = [
     {
       title: "Total Revenue",
-      value: "₹2,45,680",
-      change: "+12.8%",
-      positive: true,
+
+      value: `₹${formatCurrency(statsData.totalRevenue)}`,
+
       icon: <CurrencyRupee />,
+
       color: "green",
-      note: "vs. last month",
     },
+
     {
       title: "Total Orders",
-      value: "1,284",
-      change: "+8.2%",
-      positive: true,
+
+      value: formatCurrency(statsData.totalOrders),
+
       icon: <ShoppingBag />,
+
       color: "blue",
-      note: "vs. last month",
     },
+
     {
       title: "Total Customers",
-      value: "8,549",
-      change: "+5.4%",
-      positive: true,
+
+      value: formatCurrency(statsData.totalCustomers),
+
       icon: <People />,
+
       color: "purple",
-      note: "vs. last month",
     },
+
     {
       title: "Pending Orders",
-      value: "36",
-      change: "-2.5%",
-      positive: true,
+
+      value: formatCurrency(statsData.pendingOrders),
+
       icon: <Inventory2 />,
+
       color: "orange",
-      note: "vs. last month",
     },
   ];
 
+  // =====================================
+  // SALES CHART CALCULATION
+  // =====================================
+
+  const maxSales = Math.max(
+    ...salesData.map((item) => Number(item.value || 0)),
+    1,
+  );
+
+  const totalSales = salesData.reduce(
+    (total, item) => total + Number(item.value || 0),
+    0,
+  );
+
+  // =====================================
+  // LOADING SCREEN
+  // =====================================
+
+  if (loading && !dashboardData) {
+    return (
+      <main className="dashboard-page">
+        <div className="dashboard-loading">
+          <div className="dashboard-loader"></div>
+
+          <h3>Loading Dashboard...</h3>
+
+          <p>Please wait while we fetch your store data.</p>
+        </div>
+      </main>
+    );
+  }
+
+  // =====================================
+  // ERROR SCREEN
+  // =====================================
+
+  if (error && !dashboardData) {
+    return (
+      <main className="dashboard-page">
+        <div className="dashboard-error">
+          {/* <ErrorOutline /> */}
+
+          <h3>Unable to Load Dashboard</h3>
+
+          <p>{error}</p>
+
+          <button
+            type="button"
+            className="dashboard-retry-btn"
+            onClick={() => fetchDashboard()}
+          >
+            <Refresh />
+            Try Again
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  // =====================================
+  // MAIN DASHBOARD
+  // =====================================
+
   return (
     <main className="dashboard-page">
-      {/* Page Header */}
+      {/* =====================================
+          PAGE HEADER
+      ===================================== */}
+
       <header className="dashboard-heading">
         <div>
-          {/* <div className="dashboard-breadcrumb">
-            <DashboardIcon fontSize="small" />
-            <span>Dashboard</span>
-            <span>/</span>
-            <span className="breadcrumb-active">Overview</span>
-          </div> */}
-
           <h1>Dashboard Overview</h1>
-          <p>Welcome Lorem ipsum dolor sit amet consectetur store.</p>
+
+          <p>Welcome back! Here's what's happening in your store today.</p>
         </div>
 
-        <button
-          type="button"
-          className="dashboard-date-btn"
-          onClick={() =>
-            setPeriod((previous) =>
-              previous === "This Week" ? "This Month" : "This Week",
-            )
-          }
-        >
-          <CalendarMonth />
-          {period}
-        </button>
+        <div className="dashboard-header-actions">
+          <button
+            type="button"
+            className="dashboard-date-btn"
+            onClick={() =>
+              setPeriod((previous) =>
+                previous === "This Week" ? "This Month" : "This Week",
+              )
+            }
+          >
+            <CalendarMonth />
+
+            {period}
+          </button>
+
+          <button
+            type="button"
+            className="dashboard-date-btn"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Refresh dashboard"
+          >
+            <Refresh className={refreshing ? "refresh-spinning" : ""} />
+
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
       </header>
 
-      {/* Statistics */}
+      {/* =====================================
+          API ERROR BANNER
+      ===================================== */}
+
+      {error && dashboardData && (
+        <div className="dashboard-error-banner">
+          {/* <ErrorOutline /> */}
+
+          <span>{error}</span>
+
+          <button onClick={handleRefresh}>Retry</button>
+        </div>
+      )}
+
+      {/* =====================================
+          STATISTICS
+      ===================================== */}
+
       <section className="dashboard-stats">
         {stats.map((stat) => (
           <article className="dashboard-stat-card" key={stat.title}>
             <div className="stat-card-top">
               <span className="stat-title">{stat.title}</span>
+
               <span className={`stat-icon ${stat.color}`}>{stat.icon}</span>
             </div>
 
             <h2>{stat.value}</h2>
 
             <div className="stat-bottom">
-              <span
-                className={`stat-change ${
-                  stat.positive ? "positive" : "negative"
-                }`}
-              >
-                {stat.positive ? (
-                  <TrendingUp fontSize="small" />
-                ) : (
-                  <TrendingDown fontSize="small" />
-                )}
-                {stat.change}
-              </span>
-              <span className="stat-note">{stat.note}</span>
+              <span className="stat-note">Live database data</span>
             </div>
           </article>
         ))}
       </section>
 
-      {/* Sales Chart and Order Summary */}
+      {/* =====================================
+          SALES CHART AND ORDER SUMMARY
+      ===================================== */}
+
       <section className="dashboard-middle-grid">
+        {/* SALES OVERVIEW */}
+
         <article className="dashboard-panel sales-panel">
           <div className="panel-heading">
             <div>
               <h3>Sales Overview</h3>
+
               <p>Track your store's sales performance</p>
             </div>
 
             <button
               type="button"
               className="panel-more-btn"
-              aria-label="Sales overview options"
-              onClick={() =>
-                setPeriod((previous) =>
-                  previous === "This Week" ? "This Month" : "This Week",
-                )
-              }
+              aria-label="Refresh sales data"
+              onClick={handleRefresh}
             >
               <MoreHoriz />
             </button>
           </div>
 
+          {/* SALES TOTAL */}
+
           <div className="sales-total">
-            <h2>₹84,254</h2>
+            <h2>₹{formatCurrency(totalSales)}</h2>
+
             <span className="sales-growth">
-              <TrendingUp fontSize="small" /> 14.6%
+              <TrendingUp fontSize="small" />
+
+              {period}
             </span>
           </div>
 
           <p className="sales-caption">
-            Total sales <span>· {period}</span>
+            Total paid sales
+            <span> · {period}</span>
           </p>
+
+          {/* SALES CHART */}
 
           <div
             className="sales-chart"
             role="img"
-            aria-label="Illustrative weekly sales chart"
+            aria-label={`${period} sales chart`}
           >
             <div className="chart-y-labels">
-              <span>₹10k</span>
-              <span>₹7.5k</span>
-              <span>₹5k</span>
-              <span>₹2.5k</span>
+              <span>₹{formatCurrency(maxSales)}</span>
+
+              <span>₹{formatCurrency(maxSales * 0.75)}</span>
+
+              <span>₹{formatCurrency(maxSales * 0.5)}</span>
+
+              <span>₹{formatCurrency(maxSales * 0.25)}</span>
+
               <span>₹0</span>
             </div>
 
@@ -221,124 +372,189 @@ function Dashboard() {
               </div>
 
               <div className="chart-bars">
-                {salesData.map((item) => (
-                  <div className="chart-bar-column" key={item.day}>
-                    <div
-                      className="chart-bar"
-                      style={{ height: `${item.value}%` }}
-                      title={`${item.day}: ${item.value}%`}
-                    />
-                    <span>{item.day}</span>
-                  </div>
-                ))}
+                {salesData.length > 0 ? (
+                  salesData.map((item, index) => (
+                    <div className="chart-bar-column" key={item.date || index}>
+                      <div
+                        className="chart-bar"
+                        style={{
+                          height: `${Math.max(
+                            (Number(item.value) / maxSales) * 100,
+                            1,
+                          )}%`,
+                        }}
+                        title={`${item.day}: ₹${formatCurrency(item.value)}`}
+                      />
+
+                      <span>{item.day}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="chart-empty">No sales data available</div>
+                )}
               </div>
             </div>
           </div>
         </article>
 
+        {/* ORDER SUMMARY */}
+
         <article className="dashboard-panel order-summary-panel">
           <div className="panel-heading">
             <div>
               <h3>Order Summary</h3>
+
               <p>Current order status</p>
             </div>
+
             <button
               type="button"
               className="panel-more-btn"
-              aria-label="Order summary options"
+              aria-label="Refresh order summary"
+              onClick={handleRefresh}
             >
               <MoreHoriz />
             </button>
           </div>
 
           <div className="order-summary-list">
+            {/* DELIVERED */}
+
             <div className="order-summary-item">
               <span className="summary-icon delivered">
                 <CheckCircle />
               </span>
+
               <div className="summary-details">
                 <strong>Delivered</strong>
+
                 <span>Successfully completed</span>
               </div>
-              <strong className="summary-number">856</strong>
+
+              <strong className="summary-number">
+                {summary.delivered ?? 0}
+              </strong>
             </div>
+
+            {/* PROCESSING */}
 
             <div className="order-summary-item">
               <span className="summary-icon shipping">
                 <LocalShipping />
               </span>
+
               <div className="summary-details">
                 <strong>Processing</strong>
+
                 <span>Orders being prepared</span>
               </div>
-              <strong className="summary-number">392</strong>
+
+              <strong className="summary-number">
+                {(summary.processing ?? 0) + (summary.shipped ?? 0)}
+              </strong>
             </div>
+
+            {/* PENDING */}
 
             <div className="order-summary-item">
               <span className="summary-icon pending">
                 <PendingActions />
               </span>
+
               <div className="summary-details">
                 <strong>Pending</strong>
+
                 <span>Awaiting confirmation</span>
               </div>
-              <strong className="summary-number">36</strong>
+
+              <strong className="summary-number">{summary.pending ?? 0}</strong>
             </div>
           </div>
 
+          {/* SUMMARY FOOTER */}
+
           <div className="order-summary-footer">
             <span>Total orders</span>
-            <strong>1,284</strong>
+
+            <strong>{formatCurrency(summary.total)}</strong>
           </div>
         </article>
       </section>
 
-      {/* Recent Orders */}
+      {/* =====================================
+          RECENT ORDERS
+      ===================================== */}
+
       <section className="dashboard-panel recent-orders-panel">
         <div className="panel-heading">
           <div>
             <h3>Recent Orders</h3>
+
             <p>Latest orders placed in your store</p>
           </div>
 
           <Link to="../Order" className="view-all-btn">
-            View All <ArrowForward fontSize="small" />
+            View All
+            <ArrowForward fontSize="small" />
           </Link>
         </div>
+
+        {/* RECENT ORDERS TABLE */}
 
         <div className="dashboard-table-wrapper">
           <table className="dashboard-table">
             <thead>
               <tr>
                 <th>Order ID</th>
+
                 <th>Customer</th>
+
                 <th>Product</th>
+
                 <th>Date</th>
+
                 <th>Amount</th>
+
                 <th>Status</th>
               </tr>
             </thead>
 
             <tbody>
-              {initialOrders.map((order) => (
-                <tr key={order.id}>
-                  <td className="order-id">{order.id}</td>
-                  <td>{order.customer}</td>
-                  <td>{order.product}</td>
-                  <td className="order-date">{order.date}</td>
-                  <td className="order-amount">
-                    ₹{order.amount.toLocaleString("en-IN")}
-                  </td>
-                  <td>
-                    <span
-                      className={`order-status ${order.status.toLowerCase()}`}
-                    >
-                      <span className="status-dot" />
-                      {order.status}
-                    </span>
+              {recentOrders.length > 0 ? (
+                recentOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td className="order-id">{order.id}</td>
+
+                    <td>{order.customer}</td>
+
+                    <td>{order.product}</td>
+
+                    <td className="order-date">{order.date}</td>
+
+                    <td className="order-amount">
+                      ₹{formatCurrency(order.amount)}
+                    </td>
+
+                    <td>
+                      <span
+                        className={`order-status ${String(
+                          order.status,
+                        ).toLowerCase()}`}
+                      >
+                        <span className="status-dot" />
+
+                        {order.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="6" className="dashboard-empty">
+                    No orders found.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

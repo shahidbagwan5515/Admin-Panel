@@ -1,17 +1,24 @@
 
 <?php
 
+require_once __DIR__ . "/../config/db.php";
+require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../helpers/notification_helper.php";
+
 header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Origin: http://localhost:5173");
+header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 
-require_once __DIR__ . "/../config/db.php";
+if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
+  http_response_code(200);
+  exit;
+}
 
-// JSON response
-function response($success, $message = "", $data = null, $statusCode = 200)
+function response($success, $message, $data = null, $status = 200)
 {
-  http_response_code($statusCode);
+  http_response_code($status);
 
   echo json_encode([
     "success" => $success,
@@ -22,21 +29,43 @@ function response($success, $message = "", $data = null, $statusCode = 200)
   exit;
 }
 
-// Handle preflight request
-if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
-  http_response_code(200);
-  exit;
+function notifyRole($conn, $action, $id, $name)
+{
+  $messages = [
+    "Created" => "New role '{$name}' has been created.",
+    "Updated" => "Role '{$name}' has been updated.",
+    "Deleted" => "Role '{$name}' has been deleted."
+  ];
+
+  $user = getLoggedInUser();
+
+  if (!$user || empty($user["email"])) {
+    error_log("Role notification: Logged-in user not found.");
+    return false;
+  }
+
+  return createNotification(
+    $conn,
+    "Role",
+    $action,
+    "Role " . $action,
+    $messages[$action] ?? "Role action completed.",
+    $id,
+    $user["name"] ?? "Admin",
+    $user["email"]
+  );
 }
 
 $method = $_SERVER["REQUEST_METHOD"];
 
 try {
 
-  // GET: Fetch all roles
+  // GET ROLES
   if ($method === "GET") {
 
-    $sql = "SELECT id, name FROM roles ORDER BY id DESC";
-    $result = $conn->query($sql);
+    $result = $conn->query(
+      "SELECT id, name FROM roles ORDER BY id DESC"
+    );
 
     if (!$result) {
       response(false, "Unable to fetch roles.", null, 500);
@@ -46,7 +75,7 @@ try {
 
     while ($row = $result->fetch_assoc()) {
       $roles[] = [
-        "id" => (int) $row["id"],
+        "id" => (int)$row["id"],
         "name" => $row["name"]
       ];
     }
@@ -54,8 +83,7 @@ try {
     response(true, "Roles fetched successfully.", $roles);
   }
 
-
-  // POST: Add new role
+  // ADD ROLE
   elseif ($method === "POST") {
 
     $input = json_decode(file_get_contents("php://input"), true);
@@ -70,20 +98,17 @@ try {
       response(false, "Role name is required.", null, 400);
     }
 
-    // Check duplicate role
     $check = $conn->prepare(
       "SELECT id FROM roles WHERE LOWER(name) = LOWER(?)"
     );
 
     $check->bind_param("s", $name);
     $check->execute();
-    $duplicate = $check->get_result();
 
-    if ($duplicate->num_rows > 0) {
+    if ($check->get_result()->num_rows > 0) {
       response(false, "This role already exists.", null, 409);
     }
 
-    // Insert role
     $stmt = $conn->prepare(
       "INSERT INTO roles (name) VALUES (?)"
     );
@@ -94,14 +119,17 @@ try {
       response(false, "Unable to add role.", null, 500);
     }
 
+    $id = (int)$conn->insert_id;
+
+    notifyRole($conn, "Created", $id, $name);
+
     response(true, "Role added successfully.", [
-      "id" => $conn->insert_id,
+      "id" => $id,
       "name" => $name
     ], 201);
   }
 
-
-  // PUT: Update role
+  // UPDATE ROLE
   elseif ($method === "PUT") {
 
     $input = json_decode(file_get_contents("php://input"), true);
@@ -110,43 +138,35 @@ try {
       response(false, "Invalid request data.", null, 400);
     }
 
-    $id = (int) ($input["id"] ?? 0);
+    $id = (int)($input["id"] ?? 0);
     $name = trim($input["name"] ?? "");
 
-    if ($id <= 0) {
-      response(false, "Valid role ID is required.", null, 400);
+    if ($id <= 0 || $name === "") {
+      response(false, "Valid role ID and name are required.", null, 400);
     }
 
-    if ($name === "") {
-      response(false, "Role name is required.", null, 400);
-    }
-
-    // Check role exists
-    $checkRole = $conn->prepare(
+    $check = $conn->prepare(
       "SELECT id FROM roles WHERE id = ?"
     );
 
-    $checkRole->bind_param("i", $id);
-    $checkRole->execute();
+    $check->bind_param("i", $id);
+    $check->execute();
 
-    if ($checkRole->get_result()->num_rows === 0) {
+    if ($check->get_result()->num_rows === 0) {
       response(false, "Role not found.", null, 404);
     }
 
-    // Check duplicate name excluding current role
-    $checkDuplicate = $conn->prepare(
-      "SELECT id FROM roles
-             WHERE LOWER(name) = LOWER(?) AND id != ?"
+    $duplicate = $conn->prepare(
+      "SELECT id FROM roles WHERE LOWER(name) = LOWER(?) AND id != ?"
     );
 
-    $checkDuplicate->bind_param("si", $name, $id);
-    $checkDuplicate->execute();
+    $duplicate->bind_param("si", $name, $id);
+    $duplicate->execute();
 
-    if ($checkDuplicate->get_result()->num_rows > 0) {
+    if ($duplicate->get_result()->num_rows > 0) {
       response(false, "This role already exists.", null, 409);
     }
 
-    // Update role
     $stmt = $conn->prepare(
       "UPDATE roles SET name = ? WHERE id = ?"
     );
@@ -157,44 +177,43 @@ try {
       response(false, "Unable to update role.", null, 500);
     }
 
+    notifyRole($conn, "Updated", $id, $name);
+
     response(true, "Role updated successfully.", [
       "id" => $id,
       "name" => $name
     ]);
   }
 
-
-  // DELETE: Delete role
+  // DELETE ROLE
   elseif ($method === "DELETE") {
 
-    $id = (int) ($_GET["id"] ?? 0);
+    $id = (int)($_GET["id"] ?? 0);
 
     if ($id <= 0) {
       response(false, "Valid role ID is required.", null, 400);
     }
 
-    // Check role exists
-    $checkRole = $conn->prepare(
+    $check = $conn->prepare(
       "SELECT name FROM roles WHERE id = ?"
     );
 
-    $checkRole->bind_param("i", $id);
-    $checkRole->execute();
+    $check->bind_param("i", $id);
+    $check->execute();
 
-    $result = $checkRole->get_result();
+    $result = $check->get_result();
 
     if ($result->num_rows === 0) {
       response(false, "Role not found.", null, 404);
     }
 
     $role = $result->fetch_assoc();
+    $name = $role["name"];
 
-    // Protect admin role
-    if (strtolower($role["name"]) === "admin") {
+    if (strtolower($name) === "admin") {
       response(false, "Admin role cannot be deleted.", null, 403);
     }
 
-    // Delete role
     $stmt = $conn->prepare(
       "DELETE FROM roles WHERE id = ?"
     );
@@ -205,12 +224,10 @@ try {
       response(false, "Unable to delete role.", null, 500);
     }
 
+    notifyRole($conn, "Deleted", $id, $name);
+
     response(true, "Role deleted successfully.");
-  }
-
-
-  // Unsupported method
-  else {
+  } else {
     response(false, "Method not allowed.", null, 405);
   }
 } catch (Throwable $error) {
@@ -219,5 +236,3 @@ try {
 
   response(false, "Something went wrong on the server.", null, 500);
 }
-
-?>

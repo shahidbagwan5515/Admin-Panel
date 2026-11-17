@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
 import {
   Add,
@@ -26,6 +26,9 @@ const emptyForm = {
 function Roles() {
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const [search, setSearch] = useState("");
 
   const [showForm, setShowForm] = useState(false);
@@ -33,40 +36,58 @@ function Roles() {
 
   const [form, setForm] = useState({ ...emptyForm });
   const [error, setError] = useState("");
+  const [fetchError, setFetchError] = useState("");
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedRole, setSelectedRole] = useState(null);
 
   const menuOpen = Boolean(anchorEl);
 
+  // API helper
+  const apiRequest = async (url, options = {}) => {
+    const response = await fetch(url, {
+      ...options,
+      credentials: "include",
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...options.headers,
+      },
+    });
+
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.message || `Server error (${response.status})`);
+    }
+
+    return result;
+  };
+
   // Fetch Roles
-  const fetchRoles = async () => {
+  const fetchRoles = useCallback(async () => {
     try {
       setLoading(true);
+      setFetchError("");
 
-      const response = await fetch(ROLE_API);
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Unable to fetch roles.");
-      }
+      const result = await apiRequest(ROLE_API);
 
       const formattedRoles = (result.data || []).map((item) => ({
         id: Number(item.id),
-        name: item.name ?? item.role_name ?? "",
+        name: String(item.name ?? item.role_name ?? ""),
       }));
 
       setRoles(formattedRoles);
-    } catch (error) {
-      console.error("Role Fetch Error:", error);
+    } catch (err) {
+      console.error("Role Fetch Error:", err);
+      setFetchError(err.message || "Unable to fetch roles.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchRoles();
-  }, []);
+  }, [fetchRoles]);
 
   // Search Roles
   const filteredRoles = useMemo(() => {
@@ -86,17 +107,15 @@ function Roles() {
   // Open Edit Form
   const openEditForm = (role) => {
     setEditingId(role.id);
-
-    setForm({
-      name: role.name,
-    });
-
+    setForm({ name: role.name });
     setError("");
     setShowForm(true);
   };
 
   // Close Form
   const closeForm = () => {
+    if (saving) return;
+
     setShowForm(false);
     setEditingId(null);
     setForm({ ...emptyForm });
@@ -107,10 +126,17 @@ function Roles() {
   const saveRole = async (event) => {
     event.preventDefault();
 
+    if (saving) return;
+
     const name = form.name.trim();
 
     if (!name) {
       setError("Please enter a role name.");
+      return;
+    }
+
+    if (name.length > 100) {
+      setError("Role name cannot exceed 100 characters.");
       return;
     }
 
@@ -125,36 +151,38 @@ function Roles() {
     }
 
     try {
-      const response = await fetch(ROLE_API, {
-        method: editingId !== null ? "PUT" : "POST",
+      setSaving(true);
+      setError("");
 
-        headers: {
-          "Content-Type": "application/json",
-        },
+      const isEditing = editingId !== null;
 
+      const result = await apiRequest(ROLE_API, {
+        method: isEditing ? "PUT" : "POST",
         body: JSON.stringify({
-          ...(editingId !== null && { id: editingId }),
+          ...(isEditing && { id: editingId }),
           name,
         }),
       });
 
-      const result = await response.json();
+      alert(result.message);
 
-      if (!response.ok || !result.success) {
-        setError(result.message || "Unable to save role.");
-        return;
-      }
+      setShowForm(false);
+      setEditingId(null);
+      setForm({ ...emptyForm });
 
-      closeForm();
       await fetchRoles();
-    } catch (error) {
-      console.error("Save Role Error:", error);
-      setError("Server connection failed.");
+    } catch (err) {
+      console.error("Save Role Error:", err);
+      setError(err.message || "Unable to save role.");
+    } finally {
+      setSaving(false);
     }
   };
 
   // Delete Role
   const deleteRole = async (id) => {
+    if (deleting) return;
+
     const role = roles.find((item) => item.id === id);
 
     if (!role) return;
@@ -165,27 +193,29 @@ function Roles() {
     }
 
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${role.name} role?`,
+      `Are you sure you want to delete "${role.name}" role?`,
     );
 
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`${ROLE_API}?id=${id}`, {
-        method: "DELETE",
-      });
+      setDeleting(true);
 
-      const result = await response.json();
+      const result = await apiRequest(
+        `${ROLE_API}?id=${encodeURIComponent(id)}`,
+        {
+          method: "DELETE",
+        },
+      );
 
-      if (!response.ok || !result.success) {
-        alert(result.message || "Unable to delete role.");
-        return;
-      }
+      alert(result.message);
 
       await fetchRoles();
-    } catch (error) {
-      console.error("Delete Role Error:", error);
-      alert("Server connection failed.");
+    } catch (err) {
+      console.error("Delete Role Error:", err);
+      alert(err.message || "Unable to delete role.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -216,17 +246,13 @@ function Roles() {
 
   // Role Icons
   const getRoleIcon = (name) => {
-    const roleName = name.toLowerCase();
+    const roleName = name.toLowerCase().replace(/\s+/g, "");
 
-    if (
-      roleName === "admin" ||
-      roleName === "superadmin" ||
-      roleName === "super admin"
-    ) {
+    if (roleName === "admin" || roleName === "superadmin") {
       return <AdminPanelSettingsOutlined />;
     }
 
-    if (roleName === "deliveryboy" || roleName === "delivery boy") {
+    if (roleName === "deliveryboy") {
       return <LocalShippingOutlined />;
     }
 
@@ -243,13 +269,17 @@ function Roles() {
       <div className="roles-heading">
         <div>
           <h1 className="roles-title">Role Management</h1>
-
           <p className="roles-subtitle">
             Create and manage application user roles.
           </p>
         </div>
 
-        <button className="roles-add-btn" onClick={openAddForm}>
+        <button
+          type="button"
+          className="roles-add-btn"
+          onClick={openAddForm}
+          disabled={saving}
+        >
           <Add />
           <span>Add Role</span>
         </button>
@@ -292,10 +322,21 @@ function Roles() {
                     <div className="roles-empty">Loading roles...</div>
                   </td>
                 </tr>
+              ) : fetchError ? (
+                <tr>
+                  <td colSpan={2}>
+                    <div className="roles-empty">
+                      <p>{fetchError}</p>
+
+                      <button type="button" onClick={fetchRoles}>
+                        Retry
+                      </button>
+                    </div>
+                  </td>
+                </tr>
               ) : filteredRoles.length > 0 ? (
                 filteredRoles.map((role) => (
                   <tr key={role.id}>
-                    {/* Role Name */}
                     <td>
                       <div className="roles-name-cell">
                         <div className="roles-icon">
@@ -309,7 +350,6 @@ function Roles() {
                       </div>
                     </td>
 
-                    {/* Actions */}
                     <td>
                       <button
                         type="button"
@@ -328,9 +368,7 @@ function Roles() {
                   <td colSpan={2}>
                     <div className="roles-empty">
                       <SecurityOutlined />
-
                       <h3>No roles found</h3>
-
                       <p>Try another search or add a new role.</p>
                     </div>
                   </td>
@@ -397,7 +435,7 @@ function Roles() {
         </div>
       </section>
 
-      {/* Add / Edit Role Dialog */}
+      {/* Add / Edit Dialog */}
       {showForm && (
         <div
           className="roles-modal-overlay"
@@ -427,13 +465,14 @@ function Roles() {
                 type="button"
                 className="roles-modal-close"
                 onClick={closeForm}
+                disabled={saving}
                 aria-label="Close dialog"
               >
                 ×
               </button>
             </div>
 
-            {/* Only One Input */}
+            {/* Role Input */}
             <div className="roles-form-field">
               <label htmlFor="role-name">Role Name</label>
 
@@ -451,6 +490,8 @@ function Roles() {
                 }}
                 autoFocus
                 required
+                maxLength={100}
+                disabled={saving}
               />
             </div>
 
@@ -465,12 +506,21 @@ function Roles() {
                 type="button"
                 className="roles-cancel-btn"
                 onClick={closeForm}
+                disabled={saving}
               >
                 Cancel
               </button>
 
-              <button type="submit" className="roles-save-btn">
-                {editingId !== null ? "Save Changes" : "Add Role"}
+              <button
+                type="submit"
+                className="roles-save-btn"
+                disabled={saving}
+              >
+                {saving
+                  ? "Saving..."
+                  : editingId !== null
+                    ? "Save Changes"
+                    : "Add Role"}
               </button>
             </div>
           </form>

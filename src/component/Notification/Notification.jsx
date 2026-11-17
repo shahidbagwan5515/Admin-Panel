@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import "./Notification.css";
 
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
@@ -10,190 +10,276 @@ import LocalOfferOutlinedIcon from "@mui/icons-material/LocalOfferOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import DoneAllOutlinedIcon from "@mui/icons-material/DoneAllOutlined";
 import SearchIcon from "@mui/icons-material/Search";
-import CloseIcon from "@mui/icons-material/Close";
-import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
-import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
-import PersonOutlineOutlinedIcon from "@mui/icons-material/PersonOutlineOutlined";
-import LocalShippingOutlinedIcon from "@mui/icons-material/LocalShippingOutlined";
-import CheckCircle from "@mui/icons-material/CheckCircle";
 
-const initialNotifications = [
-  {
-    id: 1,
-    title: "New Order Received",
-    message: "A new order #ORD1025 has been placed by Rahul Sharma.",
-    time: "5 minutes ago",
-    date: "Today",
-    type: "order",
-    read: false,
-    orderId: "ORD1025",
-  },
-  {
-    id: 2,
-    title: "New Customer Registered",
-    message: "Priya Patel has created a new customer account.",
-    time: "25 minutes ago",
-    date: "Today",
-    type: "customer",
-    read: false,
-  },
-  {
-    id: 3,
-    title: "Low Stock Alert",
-    message: "Ashwagandha Capsules stock is running low. Only 5 items left.",
-    time: "1 hour ago",
-    date: "Today",
-    type: "stock",
-    read: false,
-  },
-  {
-    id: 4,
-    title: "Payment Received",
-    message: "Payment of ₹2,450 has been successfully received.",
-    time: "3 hours ago",
-    date: "Today",
-    type: "payment",
-    read: true,
-  },
-  {
-    id: 5,
-    title: "New Offer Created",
-    message: "Your Diwali special discount campaign is now active.",
-    time: "Yesterday",
-    date: "Yesterday",
-    type: "offer",
-    read: true,
-  },
-  {
-    id: 6,
-    title: "Order Delivered",
-    message: "Order #ORD1018 has been successfully delivered.",
-    time: "Yesterday",
-    date: "Yesterday",
-    type: "order",
-    read: true,
-    orderId: "ORD1018",
-  },
-];
+const API_URL =
+  "http://localhost/Admin-Panel/dashboard/Backend/api/notifications.php";
 
-const orderDetails = {
-  ORD1025: {
-    customer: "Rahul Sharma",
-    email: "rahul.sharma@gmail.com",
-    phone: "+91 98765 43210",
-    address: "Flat 101, Lorem, ipsum dolor,Maharashtra - 425001",
-    date: "30 October 2026",
-    payment: "Paid",
-    method: "UPI",
-    status: "Processing",
-    items: [
-      { name: "Ashwagandha Capsules", quantity: 2, price: 450 },
-      { name: "Amla Juice", quantity: 1, price: 350 },
-      { name: "Herbal Hair Oil", quantity: 1, price: 299 },
-    ],
-    shipping: 50,
-  },
-  ORD1018: {
-    customer: "Amit Verma",
-    email: "amit.verma@gmail.com",
-    phone: "+91 98765 12345",
-    address: "Shivaji Nagar, Mumbai, Maharashtra - 400001",
-    date: "29 October 2026",
-    payment: "Paid",
-    method: "Cash on Delivery",
-    status: "Delivered",
-    items: [
-      { name: "Neem Face Wash", quantity: 2, price: 250 },
-      { name: "Aloe Vera Gel", quantity: 1, price: 199 },
-    ],
-    shipping: 40,
-  },
+// Common API handler
+const apiRequest = async (url, options = {}) => {
+  const response = await fetch(url, {
+    ...options,
+    credentials: "include",
+    headers: {
+      ...(options.headers || {}),
+    },
+  });
+
+  let result;
+
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error("Invalid server response. Check notifications.php.");
+  }
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || `API Error: ${response.status}`);
+  }
+
+  return result;
+};
+
+// Format date
+const formatDate = (value) => {
+  if (!value) return { date: "", time: "" };
+
+  const date = new Date(String(value).replace(" ", "T"));
+
+  if (Number.isNaN(date.getTime())) {
+    return { date: String(value), time: "" };
+  }
+
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  const sameDay = (a, b) =>
+    a.getDate() === b.getDate() &&
+    a.getMonth() === b.getMonth() &&
+    a.getFullYear() === b.getFullYear();
+
+  let displayDate = date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  if (sameDay(date, today)) {
+    displayDate = "Today";
+  } else if (sameDay(date, yesterday)) {
+    displayDate = "Yesterday";
+  }
+
+  return {
+    date: displayDate,
+    time: date.toLocaleTimeString("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  };
+};
+
+// Notification icon
+const getIcon = (type) => {
+  switch (String(type || "").toLowerCase()) {
+    case "order":
+      return <ShoppingBagOutlinedIcon />;
+    case "customer":
+      return <PersonAddAltOutlinedIcon />;
+    case "stock":
+      return <Inventory2OutlinedIcon />;
+    case "payment":
+      return <PaymentOutlinedIcon />;
+    case "offer":
+      return <LocalOfferOutlinedIcon />;
+    default:
+      return <NotificationsActiveOutlinedIcon />;
+  }
 };
 
 function Notification() {
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState([]);
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
-  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [processing, setProcessing] = useState(false);
 
-  const unreadCount = notifications.filter((item) => !item.read).length;
+  // Fetch notifications using PHP session
+  const fetchNotifications = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
 
-  const filteredNotifications = notifications.filter((item) => {
-    const matchesFilter =
-      filter === "All" ||
-      (filter === "Unread" && !item.read) ||
-      (filter === "Read" && item.read);
+      const params = new URLSearchParams();
 
-    const matchesSearch =
-      item.title.toLowerCase().includes(search.toLowerCase()) ||
-      item.message.toLowerCase().includes(search.toLowerCase());
+      if (search.trim()) {
+        params.set("search", search.trim());
+      }
 
-    return matchesFilter && matchesSearch;
-  });
+      if (filter !== "All") {
+        params.set("filter", filter);
+      }
 
-  const markAsRead = (id) => {
-    setNotifications((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, read: true } : item)),
-    );
-  };
+      const query = params.toString();
+      const url = query ? `${API_URL}?${query}` : API_URL;
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
-  };
+      const result = await apiRequest(url, {
+        method: "GET",
+      });
 
-  const deleteNotification = (id) => {
-    setNotifications((prev) => prev.filter((item) => item.id !== id));
-  };
+      const rows = result.data?.notifications || [];
 
-  const clearAll = () => {
-    if (window.confirm("Are you sure you want to clear all notifications?")) {
-      setNotifications([]);
+      const formatted = rows.map((item) => {
+        const formattedDate = formatDate(item.created_at);
+        const isRead = Number(item.is_read) === 1;
+
+        return {
+          ...item,
+          id: Number(item.id),
+          read: isRead,
+          is_read: isRead ? 1 : 0,
+          type: item.type || "system",
+          time: formattedDate.time,
+          date: formattedDate.date,
+          orderId:
+            item.module === "Orders" || item.type === "order"
+              ? item.reference_id
+              : null,
+        };
+      });
+
+      setNotifications(formatted);
+      setUnreadCount(Number(result.data?.unread_count || 0));
+    } catch (err) {
+      console.error("Notification Fetch Error:", err);
+      setError(err.message || "Unable to load notifications.");
+    } finally {
+      setLoading(false);
+    }
+  }, [search, filter]);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  // Mark one notification as read
+  const markAsRead = async (id) => {
+    const selected = notifications.find((item) => item.id === Number(id));
+
+    if (!selected || selected.read) return;
+
+    try {
+      await apiRequest(API_URL, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "mark_read",
+          id: Number(id),
+        }),
+      });
+
+      setNotifications((prev) =>
+        prev.map((item) =>
+          item.id === Number(id) ? { ...item, read: true, is_read: 1 } : item,
+        ),
+      );
+
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error("Mark Read Error:", err);
+      alert(err.message);
     }
   };
 
-  const handleNotificationClick = (item) => {
-    markAsRead(item.id);
+  // Mark all as read
+  const markAllAsRead = async () => {
+    if (unreadCount === 0 || processing) return;
+
+    try {
+      setProcessing(true);
+
+      await apiRequest(API_URL, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "mark_all_read",
+        }),
+      });
+
+      await fetchNotifications();
+    } catch (err) {
+      console.error("Mark All Read Error:", err);
+      alert(err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Delete one notification
+  const deleteNotification = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this notification?")) {
+      return;
+    }
+
+    try {
+      setProcessing(true);
+
+      await apiRequest(`${API_URL}?id=${Number(id)}`, {
+        method: "DELETE",
+      });
+
+      await fetchNotifications();
+    } catch (err) {
+      console.error("Delete Notification Error:", err);
+      alert(err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Delete all notifications
+  const clearAll = async () => {
+    if (!notifications.length || processing) return;
+
+    if (!window.confirm("Are you sure you want to delete all notifications?")) {
+      return;
+    }
+
+    try {
+      setProcessing(true);
+
+      await apiRequest(`${API_URL}?all=1`, {
+        method: "DELETE",
+      });
+
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch (err) {
+      console.error("Clear Notifications Error:", err);
+      alert(err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleNotificationClick = async (item) => {
+    if (!item.read) {
+      await markAsRead(item.id);
+    }
 
     if (item.type === "order" && item.orderId) {
-      const details = orderDetails[item.orderId];
-      if (details) {
-        setSelectedOrder({
-          ...details,
-          orderId: item.orderId,
-        });
-      }
+      alert(`Order ID: ${item.orderId}`);
     }
   };
-
-  const getIcon = (type) => {
-    switch (type) {
-      case "order":
-        return <ShoppingBagOutlinedIcon />;
-      case "customer":
-        return <PersonAddAltOutlinedIcon />;
-      case "stock":
-        return <Inventory2OutlinedIcon />;
-      case "payment":
-        return <PaymentOutlinedIcon />;
-      case "offer":
-        return <LocalOfferOutlinedIcon />;
-      default:
-        return <NotificationsActiveOutlinedIcon />;
-    }
-  };
-
-  const orderSubtotal = selectedOrder
-    ? selectedOrder.items.reduce(
-        (total, item) => total + item.price * item.quantity,
-        0,
-      )
-    : 0;
-
-  const orderTotal = orderSubtotal + (selectedOrder?.shipping || 0);
 
   return (
     <div className="notification-page">
-      {/* Header */}
       <div className="notification-header">
         <div>
           <h1>Notifications</h1>
@@ -201,19 +287,26 @@ function Notification() {
         </div>
 
         <div className="notification-header-actions">
-          <button className="notification-read-all" onClick={markAllAsRead}>
+          <button
+            className="notification-read-all"
+            onClick={markAllAsRead}
+            disabled={unreadCount === 0 || processing}
+          >
             <DoneAllOutlinedIcon />
             Mark all as read
           </button>
 
-          <button className="notification-clear" onClick={clearAll}>
+          <button
+            className="notification-clear"
+            onClick={clearAll}
+            disabled={notifications.length === 0 || processing}
+          >
             <DeleteOutlineOutlinedIcon />
             Clear all
           </button>
         </div>
       </div>
 
-      {/* Notification List */}
       <div className="notification-content">
         <div className="notification-list-header">
           <div>
@@ -222,7 +315,7 @@ function Notification() {
           </div>
 
           <span className="notification-count">
-            {filteredNotifications.length} notifications
+            {notifications.length} notifications
           </span>
         </div>
 
@@ -230,7 +323,7 @@ function Notification() {
           <div className="notification-search">
             <SearchIcon />
             <input
-              type="text"
+              type="search"
               placeholder="Search notifications..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -245,6 +338,7 @@ function Notification() {
                 onClick={() => setFilter(item)}
               >
                 {item}
+
                 {item === "Unread" && unreadCount > 0 && (
                   <span>{unreadCount}</span>
                 )}
@@ -253,12 +347,25 @@ function Notification() {
           </div>
         </div>
 
-        {/* Notification Items */}
-        {filteredNotifications.length > 0 ? (
+        {loading ? (
+          <div className="notification-empty">
+            <NotificationsActiveOutlinedIcon />
+            <h3>Loading notifications...</h3>
+          </div>
+        ) : error ? (
+          <div className="notification-empty">
+            <NotificationsActiveOutlinedIcon />
+            <h3>Something went wrong</h3>
+            <p>{error}</p>
+            <button onClick={fetchNotifications}>Retry</button>
+          </div>
+        ) : notifications.length > 0 ? (
           <div className="notification-list">
-            {filteredNotifications.map((item) => (
+            {notifications.map((item) => (
               <div
-                className={`notification-item ${!item.read ? "unread-item" : ""}`}
+                className={`notification-item ${
+                  !item.read ? "unread-item" : ""
+                }`}
                 key={item.id}
               >
                 <div
@@ -267,7 +374,10 @@ function Notification() {
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") handleNotificationClick(item);
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleNotificationClick(item);
+                    }
                   }}
                 >
                   <div className={`notification-item-icon ${item.type}`}>
@@ -287,11 +397,17 @@ function Notification() {
                       <span className="notification-meta-dot">•</span>
                       <span>{item.date}</span>
                       <span className={`notification-label ${item.type}`}>
-                        {item.type}
+                        {item.module || item.type}
                       </span>
                     </div>
 
-                    {item.type === "order" && (
+                    {item.actor_name && (
+                      <span className="view-order-hint">
+                        By: {item.actor_name}
+                      </span>
+                    )}
+
+                    {item.type === "order" && item.orderId && (
                       <span className="view-order-hint">
                         Click to view order details →
                       </span>
@@ -304,6 +420,7 @@ function Notification() {
                     <button
                       className="notification-mark-btn"
                       onClick={() => markAsRead(item.id)}
+                      disabled={processing}
                       title="Mark as read"
                     >
                       <DoneAllOutlinedIcon />
@@ -313,6 +430,7 @@ function Notification() {
                   <button
                     className="notification-delete-btn"
                     onClick={() => deleteNotification(item.id)}
+                    disabled={processing}
                     title="Delete notification"
                   >
                     <DeleteOutlineOutlinedIcon />
@@ -330,191 +448,9 @@ function Notification() {
         )}
 
         <div className="notification-footer">
-          Showing {filteredNotifications.length} of {notifications.length}{" "}
-          notifications
+          Showing {notifications.length} notifications
         </div>
       </div>
-
-      {/* Order Details Modal */}
-      {selectedOrder && (
-        <div
-          className="order-modal-overlay"
-          onClick={() => setSelectedOrder(null)}
-        >
-          <div className="order-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="order-modal-header">
-              <div>
-                <span className="order-modal-eyebrow">ORDER INFORMATION</span>
-                <h2>Order Details</h2>
-                <p>{selectedOrder.orderId}</p>
-              </div>
-
-              <button
-                className="order-modal-close"
-                onClick={() => setSelectedOrder(null)}
-              >
-                <CloseIcon />
-              </button>
-            </div>
-
-            <div className="order-modal-body">
-              {/* Status */}
-              <div className="order-status-banner">
-                <div className="order-status-icon">
-                  <LocalShippingOutlinedIcon />
-                </div>
-                <div>
-                  <span>Order Status</span>
-                  <h3>{selectedOrder.status}</h3>
-                </div>
-                <span
-                  className={`order-status-badge ${selectedOrder.status.toLowerCase()}`}
-                >
-                  {selectedOrder.status}
-                </span>
-              </div>
-
-              {/* Customer Details */}
-              <div className="order-detail-grid">
-                <div className="order-detail-card">
-                  <h3>
-                    <PersonOutlineOutlinedIcon /> Customer Details
-                  </h3>
-                  <p>
-                    <strong>{selectedOrder.customer}</strong>
-                  </p>
-                  <p>{selectedOrder.email}</p>
-                  <p>{selectedOrder.phone}</p>
-                </div>
-
-                <div className="order-detail-card">
-                  <h3>
-                    <LocationOnOutlinedIcon /> Shipping Address
-                  </h3>
-                  <p>{selectedOrder.address}</p>
-                  <p className="order-date">
-                    <CalendarTodayOutlinedIcon />
-                    {selectedOrder.date}
-                  </p>
-                </div>
-              </div>
-
-              {/* Product Table */}
-              <div className="order-products-section">
-                <h3>Ordered Products</h3>
-
-                <div className="order-table-wrapper">
-                  <table className="order-products-table">
-                    <thead>
-                      <tr>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>Price</th>
-                        <th>Total</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {selectedOrder.items.map((product, index) => (
-                        <tr key={index}>
-                          <td>{product.name}</td>
-                          <td>{product.quantity}</td>
-                          <td>₹{product.price.toLocaleString("en-IN")}</td>
-                          <td>
-                            ₹
-                            {(product.price * product.quantity).toLocaleString(
-                              "en-IN",
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Payment Summary */}
-              <div className="order-bottom-grid">
-                <div className="order-payment-card">
-                  <h3>
-                    <PaymentOutlinedIcon /> Payment Information
-                  </h3>
-                  <div className="order-info-row">
-                    <span>Payment Method</span>
-                    <strong>{selectedOrder.method}</strong>
-                  </div>
-                  <div className="order-info-row">
-                    <span>Payment Status</span>
-                    <strong className="payment-success">
-                      {selectedOrder.payment}
-                    </strong>
-                  </div>
-                </div>
-
-                <div className="order-total-card">
-                  <h3>Order Summary</h3>
-                  <div className="order-info-row">
-                    <span>Subtotal</span>
-                    <span>₹{orderSubtotal.toLocaleString("en-IN")}</span>
-                  </div>
-                  <div className="order-info-row">
-                    <span>Shipping</span>
-                    <span>₹{selectedOrder.shipping}</span>
-                  </div>
-                  <div className="order-info-row order-grand-total">
-                    <strong>Total Amount</strong>
-                    <strong>₹{orderTotal.toLocaleString("en-IN")}</strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Timeline */}
-              <div className="order-timeline">
-                <h3>Order Timeline</h3>
-                <div className="timeline-step completed">
-                  <span>
-                    <CheckCircle />
-                  </span>
-                  <div>
-                    <strong>Order Placed</strong>
-                    <p>{selectedOrder.date}</p>
-                  </div>
-                </div>
-
-                <div
-                  className={`timeline-step ${selectedOrder.status === "Processing" || selectedOrder.status === "Delivered" ? "completed" : ""}`}
-                >
-                  <span>
-                    <CheckCircle />
-                  </span>
-                  <div>
-                    <strong>Processing</strong>
-                    <p>Order is being prepared</p>
-                  </div>
-                </div>
-
-                <div
-                  className={`timeline-step ${selectedOrder.status === "Delivered" ? "completed" : ""}`}
-                >
-                  <span>
-                    <CheckCircle />
-                  </span>
-                  <div>
-                    <strong>Delivered</strong>
-                    <p>Order successfully delivered</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="order-modal-footer">
-              <button onClick={() => setSelectedOrder(null)}>
-                Close Details
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

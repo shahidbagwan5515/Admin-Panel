@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./Category.css";
 
 import {
@@ -9,9 +9,6 @@ import {
   CategoryOutlined,
   Inventory2Outlined,
   MoreVert,
-  SpaOutlined,
-  LocalFloristOutlined,
-  FavoriteBorderOutlined,
 } from "@mui/icons-material";
 
 import { Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
@@ -19,100 +16,95 @@ import { Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
 const CATEGORY_API =
   "http://localhost/Admin-Panel/dashboard/Backend/api/categories.php";
 
-const initialCategories = [];
-
 const emptyForm = {
   name: "",
   description: "",
 };
 
+// Common API handler
+const categoryRequest = async (url, options = {}) => {
+  const response = await fetch(url, {
+    ...options,
+    credentials: "include",
+    headers: {
+      ...(options.headers || {}),
+    },
+  });
+
+  let result;
+
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error("Invalid server response. Check categories.php.");
+  }
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || `API Error: ${response.status}`);
+  }
+
+  return result;
+};
+
 function Category() {
   const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [error, setError] = useState("");
-  const [openMenuId, setOpenMenuId] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
 
   const menuOpen = Boolean(anchorEl);
 
-  const fetchCategories = async () => {
+  // Fetch categories
+  const fetchCategories = useCallback(async () => {
     try {
       setLoading(true);
+      setError("");
 
-      const response = await fetch(CATEGORY_API);
-      const result = await response.json();
+      const result = await categoryRequest(CATEGORY_API, {
+        method: "GET",
+      });
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Unable to fetch categories");
-      }
+      const rows = Array.isArray(result.data)
+        ? result.data
+        : result.data?.categories || [];
 
-      const formattedCategories = (result.data || []).map((item) => ({
+      const formattedCategories = rows.map((item) => ({
         id: Number(item.id),
         name: item.name ?? item.NAME ?? "",
-        description: item.description || "",
+        description: item.description ?? "",
         status:
-          String(item.status ?? item.STATUS).toLowerCase() === "active"
+          String(item.status ?? item.STATUS ?? "active").toLowerCase() ===
+          "active"
             ? "Active"
             : "Inactive",
         products: Number(item.products || 0),
-        color: "#eaf1ff",
-        icon: <CategoryOutlined />,
       }));
 
       setCategories(formattedCategories);
-    } catch (error) {
-      console.error("Category Fetch Error:", error);
+    } catch (err) {
+      console.error("Category Fetch Error:", err);
+      setError(err.message || "Unable to fetch categories.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchCategories();
-  }, []);
+  }, [fetchCategories]);
 
-  const handleMenuOpen = (event, category) => {
-    setAnchorEl(event.currentTarget);
-    setSelectedCategory(category);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-    setSelectedCategory(null);
-  };
-
-  const handleMenuEdit = () => {
-    if (!selectedCategory) return;
-
-    const category = selectedCategory;
-    handleMenuClose();
-    openEditForm(category);
-  };
-
-  const handleMenuStatus = () => {
-    if (!selectedCategory) return;
-
-    const id = selectedCategory.id;
-    handleMenuClose();
-    toggleStatus(id);
-  };
-
-  const handleMenuDelete = () => {
-    if (!selectedCategory) return;
-
-    const id = selectedCategory.id;
-    handleMenuClose();
-    deleteCategory(id);
-  };
-
+  // Search filter
   const filteredCategories = useMemo(() => {
     const term = search.trim().toLowerCase();
+
+    if (!term) return categories;
 
     return categories.filter((category) =>
       [category.name, category.description].some((value) =>
@@ -134,6 +126,7 @@ function Category() {
     0,
   );
 
+  // Open add form
   const openAddForm = () => {
     setEditingId(null);
     setForm({ ...emptyForm });
@@ -141,6 +134,7 @@ function Category() {
     setShowForm(true);
   };
 
+  // Open edit form
   const openEditForm = (category) => {
     setEditingId(category.id);
     setForm({
@@ -151,13 +145,52 @@ function Category() {
     setShowForm(true);
   };
 
+  // Close form
   const closeForm = () => {
+    if (saving) return;
+
     setShowForm(false);
     setEditingId(null);
     setForm({ ...emptyForm });
     setError("");
   };
 
+  // Menu handlers
+  const handleMenuOpen = (event, category) => {
+    setAnchorEl(event.currentTarget);
+    setSelectedCategory(category);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setSelectedCategory(null);
+  };
+
+  const handleMenuEdit = () => {
+    if (!selectedCategory) return;
+
+    const category = selectedCategory;
+    handleMenuClose();
+    openEditForm(category);
+  };
+
+  const handleMenuStatus = () => {
+    if (!selectedCategory) return;
+
+    const category = selectedCategory;
+    handleMenuClose();
+    toggleStatus(category);
+  };
+
+  const handleMenuDelete = () => {
+    if (!selectedCategory) return;
+
+    const category = selectedCategory;
+    handleMenuClose();
+    deleteCategory(category.id);
+  };
+
+  // Add / Update category
   const saveCategory = async (event) => {
     event.preventDefault();
 
@@ -181,33 +214,37 @@ function Category() {
     }
 
     try {
-      const response = await fetch(CATEGORY_API, {
-        method: editingId !== null ? "PUT" : "POST",
+      setSaving(true);
+      setError("");
+
+      const isEditing = editingId !== null;
+
+      await categoryRequest(CATEGORY_API, {
+        method: isEditing ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...(editingId !== null && { id: editingId }),
+          ...(isEditing ? { id: editingId } : {}),
           name,
           description,
         }),
       });
 
-      const result = await response.json();
+      setShowForm(false);
+      setEditingId(null);
+      setForm({ ...emptyForm });
 
-      if (!response.ok || !result.success) {
-        setError(result.message || "Unable to save category.");
-        return;
-      }
-
-      closeForm();
       await fetchCategories();
-    } catch (error) {
-      console.error("Save Category Error:", error);
-      setError("Server connection failed.");
+    } catch (err) {
+      console.error("Save Category Error:", err);
+      setError(err.message || "Unable to save category.");
+    } finally {
+      setSaving(false);
     }
   };
 
+  // Delete category
   const deleteCategory = async (id) => {
     const confirmed = window.confirm(
       "Are you sure you want to delete this category?",
@@ -216,61 +253,45 @@ function Category() {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`${CATEGORY_API}?id=${id}`, {
+      await categoryRequest(`${CATEGORY_API}?id=${Number(id)}`, {
         method: "DELETE",
       });
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        alert(result.message || "Unable to delete category.");
-        return;
-      }
-
       await fetchCategories();
-    } catch (error) {
-      console.error("Delete Category Error:", error);
-      alert("Server connection failed.");
+    } catch (err) {
+      console.error("Delete Category Error:", err);
+      alert(err.message || "Unable to delete category.");
     }
   };
 
-  const toggleStatus = async (id) => {
-    const category = categories.find((item) => item.id === id);
-
-    if (!category) return;
-
+  // Activate / Deactivate category
+  const toggleStatus = async (category) => {
     const newStatus = category.status === "Active" ? "inactive" : "active";
 
     try {
-      const response = await fetch(CATEGORY_API, {
+      await categoryRequest(CATEGORY_API, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          id,
+          id: category.id,
           name: category.name,
           description: category.description || "",
           status: newStatus,
         }),
       });
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        alert(result.message || "Unable to update category status.");
-        return;
-      }
-
       await fetchCategories();
-    } catch (error) {
-      console.error("Status Update Error:", error);
-      alert("Server connection failed.");
+    } catch (err) {
+      console.error("Category Status Error:", err);
+      alert(err.message || "Unable to update category status.");
     }
   };
 
   return (
     <div className="category-page">
+      {/* PAGE HEADER */}
       <div className="category-heading">
         <div>
           <h1 className="category-title">Category Management</h1>
@@ -279,13 +300,17 @@ function Category() {
           </p>
         </div>
 
-        <button className="category-add-btn" onClick={openAddForm}>
+        <button
+          type="button"
+          className="category-add-btn"
+          onClick={openAddForm}
+        >
           <Add />
           <span>Add Category</span>
         </button>
       </div>
 
-      {/* Category table */}
+      {/* CATEGORY CONTENT */}
       <section className="category-content">
         <div className="category-toolbar">
           <div>
@@ -320,7 +345,27 @@ function Category() {
             </thead>
 
             <tbody>
-              {filteredCategories.length > 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="category-empty">
+                      <h3>Loading categories...</h3>
+                    </div>
+                  </td>
+                </tr>
+              ) : error && categories.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="category-empty">
+                      <h3>Unable to load categories</h3>
+                      <p>{error}</p>
+                      <button type="button" onClick={fetchCategories}>
+                        Retry
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredCategories.length > 0 ? (
                 filteredCategories.map((category) => (
                   <tr key={category.id}>
                     <td>
@@ -348,6 +393,7 @@ function Category() {
                         {category.status}
                       </span>
                     </td>
+
                     <td>
                       <button
                         type="button"
@@ -379,6 +425,7 @@ function Category() {
             </tbody>
           </table>
 
+          {/* ACTION MENU */}
           <Menu
             anchorEl={anchorEl}
             open={menuOpen}
@@ -444,7 +491,7 @@ function Category() {
         </div>
       </section>
 
-      {/* Add / Edit dialog */}
+      {/* ADD / EDIT MODAL */}
       {showForm && (
         <div
           className="category-modal-overlay"
@@ -471,6 +518,7 @@ function Category() {
                 type="button"
                 className="category-modal-close"
                 onClick={closeForm}
+                disabled={saving}
                 aria-label="Close dialog"
               >
                 ×
@@ -523,11 +571,21 @@ function Category() {
                 type="button"
                 className="category-cancel-btn"
                 onClick={closeForm}
+                disabled={saving}
               >
                 Cancel
               </button>
-              <button type="submit" className="category-save-btn">
-                {editingId !== null ? "Save Changes" : "Add Category"}
+
+              <button
+                type="submit"
+                className="category-save-btn"
+                disabled={saving}
+              >
+                {saving
+                  ? "Please wait..."
+                  : editingId !== null
+                    ? "Save Changes"
+                    : "Add Category"}
               </button>
             </div>
           </form>

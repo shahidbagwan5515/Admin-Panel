@@ -149,7 +149,11 @@ function Sidebar({ open, onNavigate, onLogout }) {
     try {
       const response = await fetch(API_URL, {
         method: "GET",
+        credentials: "include",
         cache: "no-store",
+        headers: {
+          Accept: "application/json",
+        },
       });
 
       const result = await response.json();

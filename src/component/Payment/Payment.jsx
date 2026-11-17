@@ -1,104 +1,119 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./Payment.css";
 
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import Search from "@mui/icons-material/Search";
 import Download from "@mui/icons-material/Download";
-import MoreVert from "@mui/icons-material/MoreVert";
 import CreditCard from "@mui/icons-material/CreditCard";
 import AccountBalance from "@mui/icons-material/AccountBalance";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 
-const paymentData = [
-  {
-    id: "PAY-2026-001",
-    customer: "Rahul Sharma",
-    email: "rahul@gmail.com",
-    date: "27 Oct 2026",
-    orderId: "ORD-2026-001",
-    method: "UPI",
-    amount: 610,
-    status: "Success",
-  },
-  {
-    id: "PAY-2026-002",
-    customer: "Priya Patel",
-    email: "priya@gmail.com",
-    date: "27 Oct 2026",
-    orderId: "ORD-2026-002",
-    method: "Credit Card",
-    amount: 470,
-    status: "Success",
-  },
-  {
-    id: "PAY-2026-003",
-    customer: "Amit Verma",
-    email: "amit@gmail.com",
-    date: "26 Oct 2026",
-    orderId: "ORD-2026-003",
-    method: "Cash on Delivery",
-    amount: 750,
-    status: "Pending",
-  },
-  {
-    id: "PAY-2026-004",
-    customer: "Sneha Joshi",
-    email: "sneha@gmail.com",
-    date: "26 Oct 2026",
-    orderId: "ORD-2026-004",
-    method: "Net Banking",
-    amount: 250,
-    status: "Success",
-  },
-  {
-    id: "PAY-2026-005",
-    customer: "Vikas Patil",
-    email: "vikas@gmail.com",
-    date: "25 Oct 2026",
-    orderId: "ORD-2026-005",
-    method: "UPI",
-    amount: 880,
-    status: "Failed",
-  },
-  {
-    id: "PAY-2026-006",
-    customer: "Aditya Kulkarni",
-    email: "aditya@gmail.com",
-    date: "24 Oct 2026",
-    orderId: "ORD-2026-006",
-    method: "Credit Card",
-    amount: 1200,
-    status: "Refunded",
-  },
-];
+const API_URL =
+  "http://localhost/Admin-Panel/Dashboard/Backend/api/payment-list.php";
 
 function Payment() {
-  const [payments, setPayments] = useState(paymentData);
+  const [payments, setPayments] = useState([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All Status");
-  const [menuId, setMenuId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
+  // Fetch payment data from PHP API
+  const fetchPayments = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch(API_URL);
+
+      if (!response.ok) {
+        throw new Error(`HTTP Error: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success === false) {
+        throw new Error(result.message || "Unable to fetch payments");
+      }
+
+      const data = Array.isArray(result)
+        ? result
+        : result.data || result.payments || [];
+
+      const formattedData = data.map((p) => ({
+        id: String(p.payment_id ?? p.id ?? ""),
+        customer: p.customer_name ?? p.customer ?? "N/A",
+        email: p.email ?? p.customer_email ?? "N/A",
+        date: p.payment_date ?? p.date ?? p.created_at ?? "",
+        orderId: p.order_id ?? "N/A",
+        method: p.payment_method ?? p.method ?? "N/A",
+        amount: Number(p.amount ?? 0),
+        status: p.status ?? "Pending",
+      }));
+
+      setPayments(formattedData);
+    } catch (err) {
+      console.error("Payment API Error:", err);
+      setError(err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayments();
+  }, []);
+
+  // Format date
+  const formatDate = (date) => {
+    if (!date) return "N/A";
+
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) return date;
+
+    return parsedDate.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  // Payment Summary
   const totalAmount = payments
-    .filter((p) => p.status === "Success")
+    .filter((p) => p.status.toLowerCase() === "success")
     .reduce((sum, p) => sum + p.amount, 0);
 
-  const successful = payments.filter((p) => p.status === "Success").length;
+  const successful = payments.filter(
+    (p) => p.status.toLowerCase() === "success",
+  ).length;
 
-  const pending = payments.filter((p) => p.status === "Pending").length;
+  const pending = payments.filter(
+    (p) => p.status.toLowerCase() === "pending",
+  ).length;
 
-  const failed = payments.filter((p) => p.status === "Failed").length;
+  const failed = payments.filter(
+    (p) => p.status.toLowerCase() === "failed",
+  ).length;
 
+  // Search and Filter
   const filteredPayments = payments.filter((payment) => {
-    const matchesSearch =
-      payment.customer.toLowerCase().includes(search.toLowerCase()) ||
-      payment.id.toLowerCase().includes(search.toLowerCase()) ||
-      payment.orderId.toLowerCase().includes(search.toLowerCase());
+    const searchText = search.toLowerCase();
 
-    const matchesFilter = filter === "All Status" || payment.status === filter;
+    const matchesSearch =
+      payment.customer.toLowerCase().includes(searchText) ||
+      payment.id.toLowerCase().includes(searchText) ||
+      payment.orderId.toLowerCase().includes(searchText) ||
+      payment.email.toLowerCase().includes(searchText);
+
+    const matchesFilter =
+      filter === "All Status" ||
+      payment.status.toLowerCase() === filter.toLowerCase();
 
     return matchesSearch && matchesFilter;
   });
 
+  // Export CSV
   const exportCSV = () => {
     const headers = [
       "Payment ID",
@@ -122,11 +137,14 @@ function Payment() {
       p.status,
     ]);
 
-    const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join(
-      "\n",
-    );
+    const escapeCSV = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
 
-    const blob = new Blob([csv], {
+    const csv = [
+      headers.map(escapeCSV).join(","),
+      ...rows.map((row) => row.map(escapeCSV).join(",")),
+    ].join("\n");
+
+    const blob = new Blob(["\uFEFF" + csv], {
       type: "text/csv;charset=utf-8;",
     });
 
@@ -140,13 +158,6 @@ function Payment() {
     URL.revokeObjectURL(url);
   };
 
-  const updateStatus = (id, status) => {
-    setPayments((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status } : p)),
-    );
-    setMenuId(null);
-  };
-
   return (
     <div className="payment-page">
       {/* Header */}
@@ -156,13 +167,73 @@ function Payment() {
           <p>Track, manage and monitor all customer payments.</p>
         </div>
 
-        <button className="payment-export-btn" onClick={exportCSV}>
-          <Download />
-          Export CSV
-        </button>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            className="payment-export-btn"
+            onClick={fetchPayments}
+            disabled={loading}
+          >
+            Refresh
+          </button>
+
+          <button
+            className="payment-export-btn"
+            onClick={exportCSV}
+            disabled={filteredPayments.length === 0}
+          >
+            <Download />
+            Export CSV
+          </button>
+        </div>
       </div>
 
-      {/* Payment Table */}
+      {/* Payment Summary */}
+      <div className="payment-stats">
+        <div className="payment-stat-card">
+          <div className="payment-stat-icon purple">
+            <AccountBalanceWalletOutlined />
+          </div>
+          <div>
+            <span>Total Revenue</span>
+            <h2>₹{totalAmount.toLocaleString("en-IN")}</h2>
+            <small>Successful payments</small>
+          </div>
+        </div>
+
+        <div className="payment-stat-card">
+          <div className="payment-stat-icon green">
+            <PaymentsOutlined />
+          </div>
+          <div>
+            <span>Successful Payments</span>
+            <h2>{successful}</h2>
+            <small>Completed transactions</small>
+          </div>
+        </div>
+
+        <div className="payment-stat-card">
+          <div className="payment-stat-icon orange">
+            <AccountBalance />
+          </div>
+          <div>
+            <span>Pending Payments</span>
+            <h2>{pending}</h2>
+            <small>Awaiting confirmation</small>
+          </div>
+        </div>
+
+        <div className="payment-stat-card">
+          <div className="payment-stat-icon red">
+            <CreditCard />
+          </div>
+          <div>
+            <span>Failed Payments</span>
+            <h2>{failed}</h2>
+            <small>Unsuccessful transactions</small>
+          </div>
+        </div>
+      </div>
+      {/* Transactions */}
       <div className="payment-table-card">
         <div className="payment-table-header">
           <div>
@@ -179,6 +250,7 @@ function Payment() {
         <div className="payment-filters">
           <div className="payment-search">
             <Search />
+
             <input
               type="text"
               placeholder="Search payment, customer or order..."
@@ -212,7 +284,21 @@ function Payment() {
             </thead>
 
             <tbody>
-              {filteredPayments.length > 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan="7" className="payment-empty">
+                    Loading payments...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan="7" className="payment-empty">
+                    {error}
+                    <br />
+                    <button onClick={fetchPayments}>Try Again</button>
+                  </td>
+                </tr>
+              ) : filteredPayments.length > 0 ? (
                 filteredPayments.map((payment) => (
                   <tr key={payment.id}>
                     <td className="payment-id">{payment.id}</td>
@@ -220,8 +306,9 @@ function Payment() {
                     <td>
                       <div className="payment-customer">
                         <div className="payment-avatar">
-                          {payment.customer.charAt(0)}
+                          {payment.customer.charAt(0).toUpperCase()}
                         </div>
+
                         <div>
                           <strong>{payment.customer}</strong>
                           <small>{payment.email}</small>
@@ -229,21 +316,22 @@ function Payment() {
                       </div>
                     </td>
 
-                    <td>{payment.date}</td>
+                    <td>{formatDate(payment.date)}</td>
 
                     <td className="payment-order-id">{payment.orderId}</td>
 
                     <td>
                       <div className="payment-method">
-                        {payment.method === "UPI" ? (
+                        {payment.method.toLowerCase().includes("upi") ? (
                           <PaymentsOutlined />
-                        ) : payment.method === "Net Banking" ? (
+                        ) : payment.method.toLowerCase().includes("bank") ? (
                           <AccountBalance />
-                        ) : payment.method === "Cash on Delivery" ? (
+                        ) : payment.method.toLowerCase().includes("cash") ? (
                           <AccountBalanceWalletOutlined />
                         ) : (
                           <CreditCard />
                         )}
+
                         {payment.method}
                       </div>
                     </td>
@@ -259,47 +347,11 @@ function Payment() {
                         {payment.status}
                       </span>
                     </td>
-
-                    {/* <td className="payment-action-cell">
-                      <button
-                        className="payment-action-btn"
-                        onClick={() =>
-                          setMenuId(menuId === payment.id ? null : payment.id)
-                        }
-                      >
-                        <MoreVert />
-                      </button>
-
-                      {menuId === payment.id && (
-                        <div className="payment-action-menu">
-                          <button
-                            onClick={() => updateStatus(payment.id, "Success")}
-                          >
-                            Mark Success
-                          </button>
-                          <button
-                            onClick={() => updateStatus(payment.id, "Pending")}
-                          >
-                            Mark Pending
-                          </button>
-                          <button
-                            onClick={() => updateStatus(payment.id, "Refunded")}
-                          >
-                            Mark Refunded
-                          </button>
-                          <button
-                            onClick={() => updateStatus(payment.id, "Failed")}
-                          >
-                            Mark Failed
-                          </button>
-                        </div>
-                      )}
-                    </td> */}
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="8" className="payment-empty">
+                  <td colSpan="7" className="payment-empty">
                     No payment transactions found.
                   </td>
                 </tr>

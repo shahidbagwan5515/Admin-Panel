@@ -1,15 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import "./Order.css";
 
 import {
-  Menu,
   Button,
   Chip,
   IconButton,
   InputAdornment,
+  Menu,
   MenuItem,
   TextField,
-  Tooltip,
+  CircularProgress,
 } from "@mui/material";
 
 import {
@@ -23,111 +23,219 @@ import {
   EditOutlined,
   Delete,
   FileDownloadOutlined,
+  Refresh,
 } from "@mui/icons-material";
 
-const initialOrders = [
-  {
-    id: "ORD-2026-001",
-    customer: "Rahul Sharma",
-    email: "rahul@gmail.com",
-    date: "27 Oct 2026",
-    items: 3,
-    products: [
-      { name: "Ashwagandha Tablets", sku: "AYU-001", quantity: 1, price: 250 },
-      { name: "Amla Juice", sku: "AYU-002", quantity: 2, price: 180 },
-    ],
-    amount: 610,
-    payment: "Paid",
-    status: "Delivered",
-  },
-  {
-    id: "ORD-2026-002",
-    customer: "Priya Patel",
-    email: "priya@gmail.com",
-    date: "27 Oct 2026",
-    items: 2,
-    products: [
-      { name: "Chyawanprash", sku: "AYU-004", quantity: 1, price: 320 },
-      { name: "Aloe Vera Gel", sku: "AYU-005", quantity: 1, price: 150 },
-    ],
-    amount: 470,
-    payment: "Paid",
-    status: "Processing",
-  },
-  {
-    id: "ORD-2026-003",
-    customer: "Amit Verma",
-    email: "amit@gmail.com",
-    date: "26 Oct 2026",
-    items: 5,
-    products: [
-      { name: "Amla Juice", sku: "AYU-002", quantity: 2, price: 180 },
-      { name: "Neem Face Wash", sku: "AYU-003", quantity: 2, price: 120 },
-      { name: "Aloe Vera Gel", sku: "AYU-005", quantity: 1, price: 150 },
-    ],
-    amount: 750,
-    payment: "Pending",
-    status: "Pending",
-  },
-  {
-    id: "ORD-2026-004",
-    customer: "Sneha Joshi",
-    email: "sneha@gmail.com",
-    date: "26 Oct 2026",
-    items: 1,
-    products: [
-      { name: "Ashwagandha Tablets", sku: "AYU-001", quantity: 1, price: 250 },
-    ],
-    amount: 250,
-    payment: "Paid",
-    status: "Shipped",
-  },
-  {
-    id: "ORD-2026-005",
-    customer: "Vikas Patil",
-    email: "vikas@gmail.com",
-    date: "25 Oct 2026",
-    items: 4,
-    products: [
-      { name: "Chyawanprash", sku: "AYU-004", quantity: 2, price: 320 },
-      { name: "Neem Face Wash", sku: "AYU-003", quantity: 2, price: 120 },
-    ],
-    amount: 880,
-    payment: "Failed",
-    status: "Cancelled",
-  },
-  {
-    id: "ORD-2026-006",
-    customer: "Neha Singh",
-    email: "neha@gmail.com",
-    date: "25 Oct 2026",
-    items: 2,
-    products: [
-      { name: "Aloe Vera Gel", sku: "AYU-005", quantity: 1, price: 150 },
-      { name: "Amla Juice", sku: "AYU-002", quantity: 1, price: 180 },
-    ],
-    amount: 330,
-    payment: "Paid",
-    status: "Processing",
-  },
-];
+// =============================================
+// API CONFIGURATION
+// =============================================
+const ORDER_API =
+  "http://localhost/Admin-Panel/Dashboard/Backend/api/order_history.php";
+// =============================================
+// CONSTANTS
+// =============================================
+
+const STATUSES = ["Pending", "Processing", "Shipped", "Delivered", "Cancelled"];
+
+// =============================================
+// HELPERS
+// =============================================
 
 const currency = (amount) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(amount);
+    maximumFractionDigits: 2,
+  }).format(Number(amount) || 0);
+
+const formatDate = (date) => {
+  if (!date) return "-";
+
+  const parsedDate = new Date(String(date).replace(" ", "T"));
+
+  if (Number.isNaN(parsedDate.getTime())) return date;
+
+  return parsedDate.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+// =============================================
+// FORMAT API ORDER
+// =============================================
+
+const formatOrder = (order) => {
+  const products = Array.isArray(order.products) ? order.products : [];
+
+  return {
+    db_id: Number(order.db_id ?? order.id),
+
+    id: order.orderNumber || order.order_number || `ORD-${order.id}`,
+
+    orderNumber: order.orderNumber || order.order_number || `ORD-${order.id}`,
+
+    user_id: Number(order.user_id) || 0,
+
+    customer: order.customer || order.customer_name || "Customer",
+
+    email: order.email || "",
+
+    phone: order.phone || "",
+
+    address: order.address || "",
+    city: order.city || "",
+    state: order.state || "",
+    pincode: order.pincode || "",
+
+    date: order.date || order.created_at || "",
+
+    items: Number(
+      order.items ??
+        products.reduce(
+          (sum, product) => sum + Number(product.quantity || 0),
+          0,
+        ),
+    ),
+
+    products: products.map((product) => ({
+      id: product.id ?? product.productId,
+      product_id: product.productId ?? product.product_id ?? null,
+      name: product.name || product.product_name || "Product",
+      sku: product.sku || product.product_sku || "",
+      image: product.image || product.product_image || "",
+      quantity: Number(product.quantity) || 0,
+      price: Number(product.price) || 0,
+      total:
+        Number(product.total) ||
+        Number(product.price || 0) * Number(product.quantity || 0),
+    })),
+
+    subtotal: Number(order.subtotal) || 0,
+    discount: Number(order.discount) || 0,
+
+    delivery_amount: Number(order.delivery ?? order.delivery_amount) || 0,
+
+    gst: Number(order.gst) || 0,
+
+    amount: Number(order.total ?? order.grand_total ?? order.amount) || 0,
+
+    payment_method: order.paymentMethod || order.payment_method || "",
+
+    payment: order.payment || order.payment_status || "Pending",
+
+    status: order.status || order.order_status || "Pending",
+  };
+};
+
+// =============================================
+// MAIN COMPONENT
+// =============================================
 
 function Order() {
-  const [orders, setOrders] = useState(initialOrders);
+  // =============================================
+  // STATES
+  // =============================================
+
+  const [orders, setOrders] = useState([]);
+
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [error, setError] = useState("");
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editOrder, setEditOrder] = useState(null);
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
+
+  // =============================================
+  // API REQUEST HELPER
+  // =============================================
+
+  const apiRequest = useCallback(async (url, options = {}) => {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        Accept: "application/json",
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...options.headers,
+      },
+    });
+
+    const responseText = await response.text();
+
+    let result;
+
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      throw new Error("Invalid API response. Check PHP errors and API URL.");
+    }
+
+    if (!response.ok || result.success !== true) {
+      throw new Error(
+        result.message || `API request failed (${response.status})`,
+      );
+    }
+
+    return result;
+  }, []);
+
+  // =============================================
+  // FETCH ALL ORDERS FROM DATABASE
+  // =============================================
+
+  const fetchOrders = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const result = await apiRequest(ORDER_API, {
+        method: "GET",
+      });
+
+      const rows = Array.isArray(result.data) ? result.data : [];
+
+      const formattedOrders = rows.map(formatOrder);
+
+      setOrders(formattedOrders);
+
+      // Update currently selected order if it still exists.
+      setSelectedOrder((previous) => {
+        if (!previous) return null;
+
+        return (
+          formattedOrders.find((order) => order.db_id === previous.db_id) ||
+          null
+        );
+      });
+
+      console.log("Orders Loaded Successfully:", formattedOrders);
+    } catch (error) {
+      console.error("Order Fetch Error:", error);
+      setError(error.message || "Unable to load orders.");
+    } finally {
+      setLoading(false);
+    }
+  }, [apiRequest]);
+
+  // =============================================
+  // INITIAL LOAD
+  // =============================================
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  // =============================================
+  // MENU HANDLERS
+  // =============================================
 
   const handleMenuOpen = (event, order) => {
     setAnchorEl(event.currentTarget);
@@ -139,27 +247,46 @@ function Order() {
     setActiveOrder(null);
   };
 
+  // =============================================
+  // STATISTICS
+  // =============================================
+
   const stats = useMemo(() => {
     return {
       total: orders.length,
+
       pending: orders.filter((order) => order.status === "Pending").length,
+
       processing: orders.filter((order) => order.status === "Processing")
         .length,
+
       delivered: orders.filter((order) => order.status === "Delivered").length,
+
       revenue: orders
-        .filter((order) => order.payment === "Paid")
-        .reduce((sum, order) => sum + order.amount, 0),
+        .filter((order) => String(order.payment).toLowerCase() === "paid")
+        .reduce((sum, order) => sum + Number(order.amount || 0), 0),
     };
   }, [orders]);
+
+  // =============================================
+  // SEARCH AND FILTER
+  // =============================================
 
   const filteredOrders = useMemo(() => {
     const term = search.toLowerCase().trim();
 
     return orders.filter((order) => {
-      const matchesSearch =
-        order.id.toLowerCase().includes(term) ||
-        order.customer.toLowerCase().includes(term) ||
-        order.email.toLowerCase().includes(term);
+      const matchesSearch = [
+        order.id,
+        order.customer,
+        order.email,
+        order.phone,
+        order.user_id,
+      ].some((value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(term),
+      );
 
       const matchesStatus =
         statusFilter === "All" || order.status === statusFilter;
@@ -168,43 +295,111 @@ function Order() {
     });
   }, [orders, search, statusFilter]);
 
-  const updateStatus = (id, status) => {
-    setOrders((prev) =>
-      prev.map((order) => (order.id === id ? { ...order, status } : order)),
-    );
-    setEditOrder(null);
-  };
+  // =============================================
+  // UPDATE ORDER STATUS
+  // =============================================
 
-  const deleteOrder = (order) => {
-    if (window.confirm(`Delete order ${order.id}?`)) {
-      setOrders((prev) => prev.filter((item) => item.id !== order.id));
+  const updateStatus = async () => {
+    if (!editOrder) return;
+
+    try {
+      setSaving(true);
+
+      const result = await apiRequest(ORDER_API, {
+        method: "POST",
+        body: JSON.stringify({
+          order_id: editOrder.db_id,
+          status: editOrder.status,
+        }),
+      });
+
+      console.log("Status Update:", result);
+
+      await fetchOrders();
+
+      setEditOrder(null);
+
+      alert("Order status updated successfully!");
+    } catch (error) {
+      console.error("Status Update Error:", error);
+      alert(error.message || "Unable to update order status.");
+    } finally {
+      setSaving(false);
     }
   };
+
+  // =============================================
+  // DELETE ORDER
+  // =============================================
+
+  const deleteOrder = async (order) => {
+    if (!order) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${order.id}?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSaving(true);
+
+      const result = await apiRequest(ORDER_API, {
+        method: "DELETE",
+        body: JSON.stringify({
+          order_id: order.db_id,
+        }),
+      });
+
+      console.log("Order Delete:", result);
+
+      setSelectedOrder((previous) =>
+        previous?.db_id === order.db_id ? null : previous,
+      );
+
+      await fetchOrders();
+
+      alert("Order deleted successfully!");
+    } catch (error) {
+      console.error("Delete Order Error:", error);
+      alert(error.message || "Unable to delete order.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // =============================================
+  // EXPORT CSV
+  // =============================================
 
   const exportCSV = () => {
     const headers = [
       "Order ID",
       "Customer",
       "Email",
+      "Phone",
       "Date",
       "Items",
       "Amount",
-      "Payment",
-      "Status",
+      "Payment Method",
+      "Payment Status",
+      "Order Status",
     ];
 
     const rows = filteredOrders.map((order) => [
       order.id,
       order.customer,
       order.email,
+      order.phone,
       order.date,
       order.items,
       order.amount,
+      order.payment_method,
       order.payment,
       order.status,
     ]);
 
-    const csvCell = (value) => `"${String(value).replace(/"/g, '""')}"`;
+    const csvCell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
 
     const csv = [headers, ...rows]
       .map((row) => row.map(csvCell).join(","))
@@ -216,39 +411,65 @@ function Order() {
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.href = url;
     link.download = "orders.csv";
+
+    document.body.appendChild(link);
     link.click();
+    link.remove();
+
     URL.revokeObjectURL(url);
   };
 
+  // =============================================
+  // RENDER
+  // =============================================
+
   return (
     <div className="order-page">
+      {/* HEADER */}
+
       <div className="order-header">
         <div>
           <h1>Order Management</h1>
           <p>Track, manage and monitor all customer orders.</p>
         </div>
 
-        <Button
-          variant="outlined"
-          startIcon={<FileDownloadOutlined />}
-          className="order-export-btn"
-          onClick={exportCSV}
-        >
-          Export CSV
-        </Button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <Button
+            variant="outlined"
+            startIcon={<Refresh />}
+            onClick={fetchOrders}
+            disabled={loading}
+          >
+            Refresh
+          </Button>
+
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadOutlined />}
+            className="order-export-btn"
+            onClick={exportCSV}
+            disabled={!filteredOrders.length}
+          >
+            Export CSV
+          </Button>
+        </div>
       </div>
+
+      {/* STATISTICS */}
 
       <div className="order-stats">
         <div className="order-stat-card">
           <div className="order-stat-icon purple">
             <ShoppingBagOutlined />
           </div>
+
           <div>
             <span>Total Orders</span>
             <h3>{stats.total}</h3>
-            <small>All recorded orders</small>
+            <small>All orders</small>
           </div>
         </div>
 
@@ -256,6 +477,7 @@ function Order() {
           <div className="order-stat-icon orange">
             <PendingActionsOutlined />
           </div>
+
           <div>
             <span>Pending Orders</span>
             <h3>{stats.pending}</h3>
@@ -267,6 +489,7 @@ function Order() {
           <div className="order-stat-icon blue">
             <LocalShippingOutlined />
           </div>
+
           <div>
             <span>Processing</span>
             <h3>{stats.processing}</h3>
@@ -278,13 +501,16 @@ function Order() {
           <div className="order-stat-icon green">
             <CheckCircle />
           </div>
+
           <div>
             <span>Paid Revenue</span>
             <h3>{currency(stats.revenue)}</h3>
-            <small>From paid sample orders</small>
+            <small>From paid orders</small>
           </div>
         </div>
       </div>
+
+      {/* ORDER TABLE */}
 
       <div className="order-table-card">
         <div className="order-toolbar">
@@ -317,16 +543,8 @@ function Order() {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="order-status-filter"
-              aria-label="Filter orders by status"
             >
-              {[
-                "All",
-                "Pending",
-                "Processing",
-                "Shipped",
-                "Delivered",
-                "Cancelled",
-              ].map((status) => (
+              {["All", ...STATUSES].map((status) => (
                 <MenuItem key={status} value={status}>
                   {status === "All" ? "All Statuses" : status}
                 </MenuItem>
@@ -334,6 +552,28 @@ function Order() {
             </TextField>
           </div>
         </div>
+
+        {/* ERROR MESSAGE */}
+
+        {error && (
+          <div
+            style={{
+              padding: "15px 20px",
+              color: "#c62828",
+              background: "#fff1f0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <span>{error}</span>
+
+            <Button size="small" onClick={fetchOrders} disabled={loading}>
+              Try Again
+            </Button>
+          </div>
+        )}
 
         <div className="order-table-scroll">
           <table className="order-table">
@@ -351,117 +591,139 @@ function Order() {
             </thead>
 
             <tbody>
-              {filteredOrders.map((order) => (
-                <tr key={order.id}>
-                  <td>
-                    <strong className="order-id">{order.id}</strong>
-                  </td>
-
-                  <td>
-                    <div className="order-customer">
-                      <div className="order-avatar">
-                        {order.customer.charAt(0)}
-                      </div>
-                      <div>
-                        <strong>{order.customer}</strong>
-                        <span>{order.email}</span>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="order-date">{order.date}</td>
-
-                  <td>{order.items} items</td>
-
-                  <td>
-                    <strong className="order-amount">
-                      {currency(order.amount)}
-                    </strong>
-                  </td>
-
-                  <td>
-                    <Chip
-                      size="small"
-                      label={order.payment}
-                      className={`payment-chip payment-${order.payment.toLowerCase()}`}
-                    />
-                  </td>
-
-                  <td>
-                    <Chip
-                      size="small"
-                      label={order.status}
-                      className={`order-chip status-${order.status.toLowerCase()}`}
-                    />
-                  </td>
-
-                  <td>
-                    <IconButton
-                      aria-label="Order actions"
-                      onClick={(event) => handleMenuOpen(event, order)}
-                    >
-                      <MoreVert />
-                    </IconButton>
-
-                    <Menu
-                      anchorEl={anchorEl}
-                      open={Boolean(anchorEl) && activeOrder?.id === order.id}
-                      onClose={handleMenuClose}
-                      anchorOrigin={{
-                        vertical: "bottom",
-                        horizontal: "right",
-                      }}
-                      transformOrigin={{
-                        vertical: "top",
-                        horizontal: "right",
-                      }}
-                    >
-                      <MenuItem
-                        onClick={() => {
-                          setSelectedOrder(activeOrder);
-                          handleMenuClose();
-                        }}
-                      >
-                        <VisibilityOutlined fontSize="small" sx={{ mr: 1 }} />
-                        View Order
-                      </MenuItem>
-
-                      <MenuItem
-                        onClick={() => {
-                          setEditOrder(activeOrder);
-                          handleMenuClose();
-                        }}
-                      >
-                        <EditOutlined fontSize="small" sx={{ mr: 1 }} />
-                        Update Status
-                      </MenuItem>
-
-                      <MenuItem
-                        onClick={() => {
-                          const orderToDelete = activeOrder;
-                          handleMenuClose();
-                          if (orderToDelete) deleteOrder(orderToDelete);
-                        }}
-                        sx={{ color: "error.main" }}
-                      >
-                        <Delete fontSize="small" sx={{ mr: 1 }} />
-                        Delete Order
-                      </MenuItem>
-                    </Menu>
-                  </td>
-                </tr>
-              ))}
-
-              {filteredOrders.length === 0 && (
+              {loading ? (
                 <tr>
                   <td colSpan="8" className="order-empty">
-                    No orders found. Try another search or status.
+                    <CircularProgress size={25} />
+                    <p>Loading orders...</p>
                   </td>
                 </tr>
+              ) : (
+                <>
+                  {filteredOrders.map((order) => (
+                    <tr key={order.db_id}>
+                      <td>
+                        <strong className="order-id">{order.id}</strong>
+                      </td>
+
+                      <td>
+                        <div className="order-customer">
+                          <div className="order-avatar">
+                            {order.customer?.charAt(0) || "C"}
+                          </div>
+
+                          <div>
+                            <strong>{order.customer}</strong>
+                            <span>{order.email || order.phone || "N/A"}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="order-date">{formatDate(order.date)}</td>
+
+                      <td>{order.items} items</td>
+
+                      <td>
+                        <strong className="order-amount">
+                          {currency(order.amount)}
+                        </strong>
+                      </td>
+
+                      <td>
+                        <Chip
+                          size="small"
+                          label={order.payment}
+                          className={`payment-chip payment-${String(
+                            order.payment,
+                          ).toLowerCase()}`}
+                        />
+                      </td>
+
+                      <td>
+                        <Chip
+                          size="small"
+                          label={order.status}
+                          className={`order-chip status-${String(
+                            order.status,
+                          ).toLowerCase()}`}
+                        />
+                      </td>
+
+                      <td>
+                        <IconButton
+                          aria-label="Order actions"
+                          onClick={(event) => handleMenuOpen(event, order)}
+                        >
+                          <MoreVert />
+                        </IconButton>
+
+                        <Menu
+                          anchorEl={anchorEl}
+                          open={
+                            Boolean(anchorEl) &&
+                            activeOrder?.db_id === order.db_id
+                          }
+                          onClose={handleMenuClose}
+                        >
+                          <MenuItem
+                            onClick={() => {
+                              setSelectedOrder(activeOrder);
+                              handleMenuClose();
+                            }}
+                          >
+                            <VisibilityOutlined
+                              fontSize="small"
+                              sx={{ mr: 1 }}
+                            />
+                            View Order
+                          </MenuItem>
+
+                          <MenuItem
+                            onClick={() => {
+                              setEditOrder({
+                                ...activeOrder,
+                              });
+                              handleMenuClose();
+                            }}
+                          >
+                            <EditOutlined fontSize="small" sx={{ mr: 1 }} />
+                            Update Status
+                          </MenuItem>
+
+                          <MenuItem
+                            disabled={saving}
+                            onClick={() => {
+                              const selected = activeOrder;
+                              handleMenuClose();
+
+                              if (selected) {
+                                deleteOrder(selected);
+                              }
+                            }}
+                            sx={{ color: "error.main" }}
+                          >
+                            <Delete fontSize="small" sx={{ mr: 1 }} />
+                            Delete Order
+                          </MenuItem>
+                        </Menu>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {filteredOrders.length === 0 && !error && (
+                    <tr>
+                      <td colSpan="8" className="order-empty">
+                        No orders found. Try another search or status.
+                      </td>
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* FOOTER */}
 
         <div className="order-footer">
           <span>
@@ -470,7 +732,9 @@ function Order() {
         </div>
       </div>
 
-      {/* View order dialog */}
+      {/* =========================================
+          VIEW ORDER DIALOG
+      ========================================= */}
 
       {selectedOrder && (
         <div
@@ -481,12 +745,11 @@ function Order() {
             className="order-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="order-detail-title"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="order-dialog-header">
               <div>
-                <h2 id="order-detail-title">Order Details</h2>
+                <h2>Order Details</h2>
                 <p>{selectedOrder.id}</p>
               </div>
 
@@ -501,12 +764,31 @@ function Order() {
 
               <div>
                 <span>Email</span>
-                <strong>{selectedOrder.email}</strong>
+                <strong>{selectedOrder.email || "N/A"}</strong>
+              </div>
+
+              <div>
+                <span>Phone</span>
+                <strong>{selectedOrder.phone || "N/A"}</strong>
               </div>
 
               <div>
                 <span>Order Date</span>
-                <strong>{selectedOrder.date}</strong>
+                <strong>{formatDate(selectedOrder.date)}</strong>
+              </div>
+
+              <div>
+                <span>Delivery Address</span>
+                <strong>
+                  {[
+                    selectedOrder.address,
+                    selectedOrder.city,
+                    selectedOrder.state,
+                    selectedOrder.pincode,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "Address not available"}
+                </strong>
               </div>
 
               <div>
@@ -514,38 +796,76 @@ function Order() {
                 <strong>{selectedOrder.items}</strong>
               </div>
 
+              {/* PRODUCTS */}
+
               <div className="order-detail-products">
                 <span>Products</span>
 
                 <div className="order-products-list">
-                  {selectedOrder.products.map((product) => (
-                    <div className="order-product-item" key={product.sku}>
-                      <div className="order-product-info">
-                        <strong>{product.name}</strong>
-                        <small>SKU: {product.sku}</small>
-                        <small>Quantity: {product.quantity}</small>
-                      </div>
+                  {selectedOrder.products?.length > 0 ? (
+                    selectedOrder.products.map((product, index) => (
+                      <div
+                        className="order-product-item"
+                        key={`${product.id}-${index}`}
+                      >
+                        <div className="order-product-info">
+                          <strong>{product.name}</strong>
 
-                      <strong className="order-product-price">
-                        {currency(product.price * product.quantity)}
-                      </strong>
-                    </div>
-                  ))}
+                          <small>SKU: {product.sku || "N/A"}</small>
+
+                          <small>Quantity: {product.quantity}</small>
+
+                          <small>Unit Price: {currency(product.price)}</small>
+                        </div>
+
+                        <strong className="order-product-price">
+                          {currency(product.total)}
+                        </strong>
+                      </div>
+                    ))
+                  ) : (
+                    <p>Product details not available.</p>
+                  )}
                 </div>
               </div>
 
               <div>
-                <span>Amount</span>
+                <span>Subtotal</span>
+                <strong>{currency(selectedOrder.subtotal)}</strong>
+              </div>
+
+              <div>
+                <span>Discount</span>
+                <strong>{currency(selectedOrder.discount)}</strong>
+              </div>
+
+              <div>
+                <span>Delivery</span>
+                <strong>{currency(selectedOrder.delivery_amount)}</strong>
+              </div>
+
+              <div>
+                <span>GST</span>
+                <strong>{currency(selectedOrder.gst)}</strong>
+              </div>
+
+              <div>
+                <span>Grand Total</span>
                 <strong>{currency(selectedOrder.amount)}</strong>
               </div>
 
               <div>
-                <span>Payment</span>
+                <span>Payment Method</span>
+                <strong>{selectedOrder.payment_method || "N/A"}</strong>
+              </div>
+
+              <div>
+                <span>Payment Status</span>
                 <strong>{selectedOrder.payment}</strong>
               </div>
 
               <div>
-                <span>Status</span>
+                <span>Order Status</span>
                 <strong>{selectedOrder.status}</strong>
               </div>
             </div>
@@ -562,25 +882,30 @@ function Order() {
         </div>
       )}
 
-      {/* Update status dialog */}
+      {/* =========================================
+          UPDATE STATUS DIALOG
+      ========================================= */}
+
       {editOrder && (
         <div
           className="order-dialog-backdrop"
-          onClick={() => setEditOrder(null)}
+          onClick={() => !saving && setEditOrder(null)}
         >
           <div
             className="order-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="order-status-title"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="order-dialog-header">
               <div>
-                <h2 id="order-status-title">Update Order Status</h2>
+                <h2>Update Order Status</h2>
                 <p>{editOrder.id}</p>
               </div>
-              <IconButton onClick={() => setEditOrder(null)}>×</IconButton>
+
+              <IconButton onClick={() => setEditOrder(null)} disabled={saving}>
+                ×
+              </IconButton>
             </div>
 
             <TextField
@@ -595,27 +920,8 @@ function Order() {
                 })
               }
               className="EditOption"
-              SelectProps={{
-                MenuProps: {
-                  disablePortal: false,
-                  PaperProps: {
-                    sx: {
-                      maxHeight: 240,
-                      borderRadius: "8px",
-                      boxShadow: "0 8px 20px rgba(0,0,0,0.18)",
-                      zIndex: 1500,
-                    },
-                  },
-                },
-              }}
             >
-              {[
-                "Pending",
-                "Processing",
-                "Shipped",
-                "Delivered",
-                "Cancelled",
-              ].map((status) => (
+              {STATUSES.map((status) => (
                 <MenuItem key={status} value={status}>
                   {status}
                 </MenuItem>
@@ -623,14 +929,24 @@ function Order() {
             </TextField>
 
             <div className="order-dialog-buttons">
-              <Button variant="outlined" onClick={() => setEditOrder(null)}>
+              <Button
+                variant="outlined"
+                onClick={() => setEditOrder(null)}
+                disabled={saving}
+              >
                 Cancel
               </Button>
+
               <Button
                 variant="contained"
-                onClick={() => updateStatus(editOrder.id, editOrder.status)}
+                onClick={updateStatus}
+                disabled={saving}
               >
-                Save Status
+                {saving ? (
+                  <CircularProgress size={20} color="inherit" />
+                ) : (
+                  "Save Status"
+                )}
               </Button>
             </div>
           </div>

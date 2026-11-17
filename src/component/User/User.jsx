@@ -94,7 +94,10 @@ function User() {
   // Fetch users from database
   const fetchUsers = async () => {
     try {
-      const response = await fetch(API_URL);
+      const response = await fetch(API_URL, {
+        method: "GET",
+        credentials: "include",
+      });
       const result = await response.json();
 
       if (!response.ok || result?.success === false) {
@@ -250,6 +253,7 @@ function User() {
 
       const response = await fetch(API_URL, {
         method: editingUser ? "PUT" : "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -294,6 +298,7 @@ function User() {
         `${API_URL}?id=${encodeURIComponent(user.id)}`,
         {
           method: "DELETE",
+          credentials: "include",
         },
       );
 
@@ -378,6 +383,7 @@ function User() {
 
       const response = await fetch(API_URL, {
         method: "PUT",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

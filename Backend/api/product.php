@@ -1,29 +1,44 @@
 
 <?php
 
-require_once __DIR__ . '/../config/db.php';
+// =============================================
+// HEADERS & CORS
+// =============================================
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: http://localhost:5173");
+header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
   http_response_code(200);
   exit;
 }
 
-// Upload directory
+// =============================================
+// DATABASE, AUTH & NOTIFICATION
+// =============================================
+
+require_once __DIR__ . "/../config/db.php";
+require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../helpers/notification_helper.php";
+
+// =============================================
+// UPLOAD SETTINGS
+// =============================================
+
 $uploadDir = __DIR__ . "/../uploads/products/";
 
-// Image URL
 $projectPath = dirname(dirname($_SERVER["SCRIPT_NAME"]));
 $uploadUrl = $projectPath . "/uploads/products/";
 
-// JSON response
+// =============================================
+// JSON RESPONSE
+// =============================================
+
 function response($success, $message, $data = null, $status = 200)
 {
-
   http_response_code($status);
 
   echo json_encode([
@@ -35,19 +50,84 @@ function response($success, $message, $data = null, $status = 200)
   exit;
 }
 
-// Get request data
+// =============================================
+// REQUEST DATA
+// =============================================
+
 function getRequestData()
 {
-
   $json = json_decode(file_get_contents("php://input"), true);
 
   return is_array($json) ? $json : $_POST;
 }
 
-// Save product images
+// =============================================
+// PRODUCT NOTIFICATION
+// =============================================
+
+function productNotification(
+  $conn,
+  $action,
+  $title,
+  $message,
+  $productId
+) {
+  try {
+
+    $user = getLoggedInUser();
+
+    if (!$user || empty($user["email"])) {
+      error_log(
+        "PRODUCT NOTIFICATION FAILED: Logged-in user/email not found."
+      );
+      return false;
+    }
+
+    $actorName = $user["name"] ?? "Admin";
+    $recipientEmail = strtolower(
+      trim($user["email"])
+    );
+
+    $result = createNotification(
+      $conn,
+      "Product",
+      $action,
+      $title,
+      $message,
+      $productId,
+      $actorName,
+      $recipientEmail
+    );
+
+    if (!$result) {
+      error_log(
+        "PRODUCT NOTIFICATION INSERT FAILED: " . $title
+      );
+      return false;
+    }
+
+    error_log(
+      "PRODUCT NOTIFICATION CREATED: " .
+        $title . " | " . $recipientEmail
+    );
+
+    return true;
+  } catch (Throwable $e) {
+
+    error_log(
+      "PRODUCT NOTIFICATION ERROR: " . $e->getMessage()
+    );
+
+    return false;
+  }
+}
+
+// =============================================
+// IMAGE UPLOAD
+// =============================================
+
 function uploadProductImages($images)
 {
-
   global $uploadDir, $uploadUrl;
 
   if (!is_array($images)) {
@@ -59,173 +139,291 @@ function uploadProductImages($images)
   }
 
   if (!is_dir($uploadDir)) {
-    mkdir($uploadDir, 0775, true);
+    if (!mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+      throw new Exception("Unable to create upload directory.");
+    }
   }
 
   $savedImages = [];
 
   foreach ($images as $image) {
 
-    // Existing image URL
-    if (!preg_match('/^data:image\/(jpeg|jpg|png|webp);base64,/i', $image, $matches)) {
+    if (!is_string($image) || trim($image) === "") {
+      continue;
+    }
 
+    $image = trim($image);
+
+    // External URL
+    if (preg_match('/^https?:\/\//i', $image)) {
       $savedImages[] = $image;
       continue;
     }
 
+    // Existing local image
+    $imagePath = parse_url($image, PHP_URL_PATH);
+
+    if (!$imagePath) {
+      $imagePath = $image;
+    }
+
+    $normalizedPath = ltrim(
+      str_replace("\\", "/", $imagePath),
+      "/"
+    );
+
+    if (
+      preg_match(
+        '#(?:^|/)uploads/products/([a-zA-Z0-9_.-]+\.(?:jpg|jpeg|png|webp))$#i',
+        $normalizedPath,
+        $matches
+      )
+    ) {
+
+      $fileName = $matches[1];
+
+      if (!is_file($uploadDir . $fileName)) {
+        throw new Exception(
+          "Existing product image not found: " . $fileName
+        );
+      }
+
+      $savedImages[] = $uploadUrl . $fileName;
+      continue;
+    }
+
+    // Base64 image
+    if (
+      !preg_match(
+        '/^data:image\/(jpeg|jpg|png|webp);base64,/i',
+        $image
+      )
+    ) {
+      throw new Exception("Unsupported image format.");
+    }
+
     $parts = explode(",", $image, 2);
+
+    if (count($parts) !== 2) {
+      throw new Exception("Invalid image data.");
+    }
 
     $imageData = base64_decode($parts[1], true);
 
     if ($imageData === false) {
-      throw new Exception("Invalid image data.");
+      throw new Exception("Invalid Base64 image data.");
     }
 
     if (strlen($imageData) > 5 * 1024 * 1024) {
       throw new Exception("Image size must be below 5 MB.");
     }
 
-    $extension = strtolower($matches[1]);
+    $imageInfo = @getimagesizefromstring($imageData);
 
-    if ($extension === "jpeg") {
-      $extension = "jpg";
+    if ($imageInfo === false) {
+      throw new Exception("Invalid image file.");
     }
+
+    $mimeExtensions = [
+      "image/jpeg" => "jpg",
+      "image/png" => "png",
+      "image/webp" => "webp"
+    ];
+
+    $mime = $imageInfo["mime"];
+
+    if (!isset($mimeExtensions[$mime])) {
+      throw new Exception(
+        "Only JPG, JPEG, PNG and WEBP images are allowed."
+      );
+    }
+
+    $extension = $mimeExtensions[$mime];
 
     $fileName = uniqid("product_", true) . "." . $extension;
 
-    $filePath = $uploadDir . $fileName;
-
-    if (file_put_contents($filePath, $imageData) === false) {
+    if (
+      file_put_contents(
+        $uploadDir . $fileName,
+        $imageData
+      ) === false
+    ) {
       throw new Exception("Image upload failed.");
     }
 
     $savedImages[] = $uploadUrl . $fileName;
   }
 
+  if (count($savedImages) > 6) {
+    throw new Exception("Maximum 6 images allowed.");
+  }
+
   return json_encode($savedImages);
 }
 
+// =============================================
+// VALIDATE PRODUCT
+// =============================================
 
-// ================================
-// GET - FETCH PRODUCTS
-// ================================
+function validateProduct($data)
+{
+  $name = trim($data["name"] ?? "");
+  $sku = trim($data["sku"] ?? "");
+  $category = trim($data["category"] ?? "");
+  $supplier = trim($data["supplier"] ?? "");
+  $description = trim($data["description"] ?? "");
 
-if ($_SERVER["REQUEST_METHOD"] === "GET") {
+  $stock = $data["stock"] ?? null;
+  $price = $data["price"] ?? null;
+  $status = $data["status"] ?? "Active";
 
-  $id = isset($_GET["id"]) ? (int)$_GET["id"] : 0;
-
-  if ($id > 0) {
-
-    $stmt = $conn->prepare(
-      "SELECT * FROM products WHERE id = ?"
-    );
-
-    $stmt->bind_param("i", $id);
-  } else {
-
-    $stmt = $conn->prepare(
-      "SELECT * FROM products ORDER BY id DESC"
-    );
+  if (
+    $name === "" ||
+    $sku === "" ||
+    $category === "" ||
+    $supplier === ""
+  ) {
+    response(false, "Please fill all required fields.", null, 422);
   }
 
-  $stmt->execute();
-
-  $result = $stmt->get_result();
-
-  $products = [];
-
-  while ($row = $result->fetch_assoc()) {
-
-    $row["images"] = $row["images"]
-      ? json_decode($row["images"], true)
-      : [];
-
-    $row["stock"] = (int)$row["stock"];
-    $row["price"] = (float)$row["price"];
-
-    $products[] = $row;
+  if (
+    !is_numeric($stock) ||
+    (float)$stock < 0 ||
+    floor((float)$stock) != (float)$stock
+  ) {
+    response(false, "Invalid stock quantity.", null, 422);
   }
 
-  $stmt->close();
-
-  if ($id > 0 && empty($products)) {
-    response(false, "Product not found.", null, 404);
+  if (
+    !is_numeric($price) ||
+    !is_finite((float)$price) ||
+    (float)$price < 0
+  ) {
+    response(false, "Invalid product price.", null, 422);
   }
 
-  response(true, "Products fetched successfully.", $id > 0 ? $products[0] : $products);
+  if (!in_array($status, ["Active", "Inactive"], true)) {
+    response(false, "Invalid product status.", null, 422);
+  }
+
+  return [
+    "name" => $name,
+    "sku" => $sku,
+    "category" => $category,
+    "stock" => (int)$stock,
+    "price" => (float)$price,
+    "supplier" => $supplier,
+    "description" => $description,
+    "status" => $status
+  ];
 }
 
+// =============================================
+// REQUEST METHOD
+// =============================================
 
-// ================================
-// POST - ADD PRODUCT
-// ================================
-// ================================
-// POST - ADD PRODUCT
-// ================================
+$method = $_SERVER["REQUEST_METHOD"];
 
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
+// =============================================
+// GET PRODUCTS
+// =============================================
+
+if ($method === "GET") {
+
+  try {
+
+    $id = (int)($_GET["id"] ?? 0);
+
+    if ($id > 0) {
+
+      $stmt = $conn->prepare(
+        "SELECT * FROM products WHERE id = ?"
+      );
+
+      $stmt->bind_param("i", $id);
+    } else {
+
+      $stmt = $conn->prepare(
+        "SELECT * FROM products ORDER BY id DESC"
+      );
+    }
+
+    if (!$stmt) {
+      throw new Exception($conn->error);
+    }
+
+    $stmt->execute();
+
+    $result = $stmt->get_result();
+
+    $products = [];
+
+    while ($row = $result->fetch_assoc()) {
+
+      $row["id"] = (int)$row["id"];
+      $row["stock"] = (int)$row["stock"];
+      $row["price"] = (float)$row["price"];
+
+      $row["images"] = $row["images"]
+        ? (json_decode($row["images"], true) ?: [])
+        : [];
+
+      $products[] = $row;
+    }
+
+    $stmt->close();
+
+    if ($id > 0 && empty($products)) {
+      response(false, "Product not found.", null, 404);
+    }
+
+    response(
+      true,
+      "Products fetched successfully.",
+      $id > 0 ? $products[0] : $products
+    );
+  } catch (Throwable $e) {
+
+    error_log("PRODUCT GET ERROR: " . $e->getMessage());
+
+    response(false, "Unable to fetch products.", null, 500);
+  }
+}
+
+// =============================================
+// ADD PRODUCT
+// =============================================
+
+elseif ($method === "POST") {
+
+  $uploadedFiles = [];
 
   try {
 
     $data = getRequestData();
 
-    if (empty($data)) {
+    if (!is_array($data) || empty($data)) {
       response(false, "No product data received.", null, 400);
     }
 
-    $name = trim($data["name"] ?? "");
-    $sku = trim($data["sku"] ?? "");
-    $category = trim($data["category"] ?? "");
-    $supplier = trim($data["supplier"] ?? "");
-    $description = trim($data["description"] ?? "");
-    $status = $data["status"] ?? "Active";
+    $product = validateProduct($data);
 
-    $stock = $data["stock"] ?? null;
-    $price = $data["price"] ?? null;
-
-    // Required fields
-    if (
-      $name === "" ||
-      $sku === "" ||
-      $category === "" ||
-      $supplier === ""
-    ) {
-      response(false, "Please fill all required fields.", null, 422);
-    }
-
-    // Stock validation
-    if (
-      !is_numeric($stock) ||
-      (float)$stock < 0 ||
-      floor((float)$stock) != (float)$stock
-    ) {
-      response(false, "Invalid stock quantity.", null, 422);
-    }
-
-    // Price validation
-    if (!is_numeric($price) || (float)$price < 0) {
-      response(false, "Invalid product price.", null, 422);
-    }
-
-    // Status validation
-    if (!in_array($status, ["Active", "Inactive"], true)) {
-      response(false, "Invalid product status.", null, 422);
-    }
-
-    $stock = (int)$stock;
-    $price = (float)$price;
+    extract($product);
 
     // Check duplicate SKU
     $check = $conn->prepare(
       "SELECT id FROM products WHERE sku = ?"
     );
 
+    if (!$check) {
+      throw new Exception($conn->error);
+    }
+
     $check->bind_param("s", $sku);
     $check->execute();
 
     if ($check->get_result()->num_rows > 0) {
       $check->close();
-
       response(false, "SKU already exists.", null, 409);
     }
 
@@ -234,10 +432,22 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     // Upload images
     $images = uploadProductImages($data["images"] ?? []);
 
+    $decodedImages = json_decode($images, true);
+
+    foreach ($decodedImages as $image) {
+
+      $fileName = basename(
+        parse_url($image, PHP_URL_PATH)
+      );
+
+      if (str_starts_with($fileName, "product_")) {
+        $uploadedFiles[] = $fileName;
+      }
+    }
+
     // Insert product
-    $stmt = $conn->prepare(
-      "INSERT INTO products
-            (
+    $stmt = $conn->prepare("
+            INSERT INTO products (
                 name,
                 sku,
                 category,
@@ -248,11 +458,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 images,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    );
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
 
     if (!$stmt) {
-      throw new Exception("Database prepare failed: " . $conn->error);
+      throw new Exception($conn->error);
     }
 
     $stmt->bind_param(
@@ -269,35 +479,67 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     );
 
     if (!$stmt->execute()) {
-      throw new Exception("Product insert failed: " . $stmt->error);
+      throw new Exception($stmt->error);
     }
 
-    $newId = $conn->insert_id;
+    $newId = (int)$conn->insert_id;
 
     $stmt->close();
 
-    response(true, "Product added successfully.", [
-      "id" => $newId
-    ], 201);
+    // Create notification
+    $notificationCreated = productNotification(
+      $conn,
+      "Created",
+      "New Product Added",
+      "Product '{$name}' (SKU: {$sku}) has been added successfully.",
+      $newId
+    );
+
+    response(
+      true,
+      "Product added successfully.",
+      [
+        "id" => $newId,
+        "name" => $name,
+        "sku" => $sku,
+        "notification_created" => $notificationCreated
+      ],
+      201
+    );
   } catch (Throwable $e) {
+
+    foreach ($uploadedFiles as $file) {
+
+      $path = $uploadDir . $file;
+
+      if (is_file($path)) {
+        unlink($path);
+      }
+    }
 
     error_log("PRODUCT ADD ERROR: " . $e->getMessage());
 
+    if (
+      $e instanceof mysqli_sql_exception &&
+      $e->getCode() === 1062
+    ) {
+      response(false, "SKU already exists.", null, 409);
+    }
+
     response(
       false,
-      $e->getMessage(),
+      "Product add failed: " . $e->getMessage(),
       null,
       500
     );
   }
 }
 
+// =============================================
+// UPDATE PRODUCT
+// =============================================
 
-// ================================
-// PUT - UPDATE PRODUCT
-// ================================
-
-if ($_SERVER["REQUEST_METHOD"] === "PUT") {
+elseif ($method === "PUT") {
 
   try {
 
@@ -309,58 +551,73 @@ if ($_SERVER["REQUEST_METHOD"] === "PUT") {
 
     $data = getRequestData();
 
-    $name = trim($data["name"] ?? "");
-    $sku = trim($data["sku"] ?? "");
-    $category = trim($data["category"] ?? "");
-    $stock = $data["stock"] ?? null;
-    $price = $data["price"] ?? null;
-    $supplier = trim($data["supplier"] ?? "");
-    $description = trim($data["description"] ?? "");
-    $status = $data["status"] ?? "Active";
-
-    if (
-      $name === "" ||
-      $sku === "" ||
-      $category === "" ||
-      $supplier === ""
-    ) {
-      response(false, "Please fill all required fields.", null, 422);
+    if (!is_array($data) || empty($data)) {
+      response(false, "No product data received.", null, 400);
     }
 
-    if (
-      !is_numeric($stock) ||
-      (float)$stock < 0 ||
-      floor((float)$stock) != (float)$stock
-    ) {
-      response(false, "Invalid stock quantity.", null, 422);
+    // Check product exists
+    $existing = $conn->prepare(
+      "SELECT id FROM products WHERE id = ?"
+    );
+
+    if (!$existing) {
+      throw new Exception($conn->error);
     }
 
-    if (!is_numeric($price) || (float)$price < 0) {
-      response(false, "Invalid product price.", null, 422);
+    $existing->bind_param("i", $id);
+    $existing->execute();
+
+    if (!$existing->get_result()->fetch_assoc()) {
+      $existing->close();
+      response(false, "Product not found.", null, 404);
     }
 
-    if (!in_array($status, ["Active", "Inactive"], true)) {
-      response(false, "Invalid product status.", null, 422);
+    $existing->close();
+
+    $product = validateProduct($data);
+
+    extract($product);
+
+    // Check duplicate SKU
+    $check = $conn->prepare(
+      "SELECT id FROM products WHERE sku = ? AND id != ?"
+    );
+
+    if (!$check) {
+      throw new Exception($conn->error);
     }
 
-    $stock = (int)$stock;
-    $price = (float)$price;
+    $check->bind_param("si", $sku, $id);
+    $check->execute();
 
+    if ($check->get_result()->num_rows > 0) {
+      $check->close();
+      response(false, "SKU already exists.", null, 409);
+    }
+
+    $check->close();
+
+    // Upload or preserve images
     $images = uploadProductImages($data["images"] ?? []);
 
-    $stmt = $conn->prepare(
-      "UPDATE products SET
-            name = ?,
-            sku = ?,
-            category = ?,
-            stock = ?,
-            price = ?,
-            supplier = ?,
-            description = ?,
-            images = ?,
-            status = ?
-            WHERE id = ?"
-    );
+    // Update product
+    $stmt = $conn->prepare("
+            UPDATE products SET
+                name = ?,
+                sku = ?,
+                category = ?,
+                stock = ?,
+                price = ?,
+                supplier = ?,
+                description = ?,
+                images = ?,
+                status = ?
+            WHERE id = ?
+        ");
+
+    if (!$stmt) {
+      throw new Exception($conn->error);
+    }
 
     $stmt->bind_param(
       "sssidssssi",
@@ -376,75 +633,137 @@ if ($_SERVER["REQUEST_METHOD"] === "PUT") {
       $id
     );
 
-    $stmt->execute();
-
-    if ($stmt->affected_rows === 0) {
-
-      $check = $conn->prepare(
-        "SELECT id FROM products WHERE id = ?"
-      );
-
-      $check->bind_param("i", $id);
-      $check->execute();
-
-      $exists = $check->get_result()->num_rows > 0;
-
-      $check->close();
-
-      if (!$exists) {
-        response(false, "Product not found.", null, 404);
-      }
+    if (!$stmt->execute()) {
+      throw new Exception($stmt->error);
     }
 
     $stmt->close();
 
-    response(true, "Product updated successfully.");
+    // Create notification
+    $notificationCreated = productNotification(
+      $conn,
+      "Updated",
+      "Product Updated",
+      "Product '{$name}' (SKU: {$sku}) has been updated successfully.",
+      $id
+    );
+
+    response(
+      true,
+      "Product updated successfully.",
+      [
+        "id" => $id,
+        "notification_created" => $notificationCreated
+      ]
+    );
   } catch (Throwable $e) {
 
-    if ($conn->errno == 1062) {
+    error_log("PRODUCT UPDATE ERROR: " . $e->getMessage());
+
+    if (
+      $e instanceof mysqli_sql_exception &&
+      $e->getCode() === 1062
+    ) {
       response(false, "SKU already exists.", null, 409);
     }
 
-    response(false, $e->getMessage(), null, 500);
+    response(
+      false,
+      "Product update failed: " . $e->getMessage(),
+      null,
+      500
+    );
   }
 }
 
+// =============================================
+// DELETE PRODUCT
+// =============================================
 
-// ================================
-// DELETE - DELETE PRODUCT
-// ================================
+elseif ($method === "DELETE") {
 
-if ($_SERVER["REQUEST_METHOD"] === "DELETE") {
+  try {
 
-  $id = (int)($_GET["id"] ?? 0);
+    $id = (int)($_GET["id"] ?? 0);
 
-  if ($id <= 0) {
-    response(false, "Product ID is required.", null, 400);
-  }
+    if ($id <= 0) {
+      response(false, "Product ID is required.", null, 400);
+    }
 
-  $stmt = $conn->prepare(
-    "DELETE FROM products WHERE id = ?"
-  );
+    // Fetch product before deletion
+    $check = $conn->prepare(
+      "SELECT name, sku FROM products WHERE id = ?"
+    );
 
-  $stmt->bind_param("i", $id);
+    if (!$check) {
+      throw new Exception($conn->error);
+    }
 
-  $stmt->execute();
+    $check->bind_param("i", $id);
+    $check->execute();
 
-  if ($stmt->affected_rows === 0) {
+    $product = $check->get_result()->fetch_assoc();
+
+    $check->close();
+
+    if (!$product) {
+      response(false, "Product not found.", null, 404);
+    }
+
+    // Delete product
+    $stmt = $conn->prepare(
+      "DELETE FROM products WHERE id = ?"
+    );
+
+    if (!$stmt) {
+      throw new Exception($conn->error);
+    }
+
+    $stmt->bind_param("i", $id);
+
+    if (!$stmt->execute()) {
+      throw new Exception($stmt->error);
+    }
+
     $stmt->close();
-    response(false, "Product not found.", null, 404);
+
+    // Create notification
+    $notificationCreated = productNotification(
+      $conn,
+      "Deleted",
+      "Product Deleted",
+      "Product '{$product["name"]}' (SKU: {$product["sku"]}) has been deleted.",
+      $id
+    );
+
+    response(
+      true,
+      "Product deleted successfully.",
+      [
+        "id" => $id,
+        "notification_created" => $notificationCreated
+      ]
+    );
+  } catch (Throwable $e) {
+
+    error_log("PRODUCT DELETE ERROR: " . $e->getMessage());
+
+    response(
+      false,
+      "Product delete failed: " . $e->getMessage(),
+      null,
+      500
+    );
   }
-
-  $stmt->close();
-
-  response(true, "Product deleted successfully.");
 }
 
+// =============================================
+// INVALID METHOD
+// =============================================
 
-// ================================
-// INVALID REQUEST
-// ================================
+else {
 
-response(false, "Invalid request method.", null, 405);
+  response(false, "Method not allowed.", null, 405);
+}
 
 ?>
